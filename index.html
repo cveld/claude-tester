@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mijn Website</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo">MijnSite</span>
+      <ul>
+        <li><a href="#home">Home</a></li>
+        <li><a href="#over">Over</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="hero">
+      <h1>Welkom op mijn website</h1>
+      <p>Een simpele website, automatisch gebouwd en gepubliceerd via GitHub Pages.</p>
+      <a href="#over" class="btn">Meer lezen</a>
+    </section>
+
+    <section id="over" class="section">
+      <h2>Over deze site</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>HTML &amp; CSS</h3>
+          <p>Pure HTML en CSS, geen frameworks nodig voor een snelle, lichte pagina.</p>
+        </div>
+        <div class="card">
+          <h3>GitHub Actions</h3>
+          <p>Elke push naar <code>main</code> triggert een automatische deployment.</p>
+        </div>
+        <div class="card">
+          <h3>GitHub Pages</h3>
+          <p>Gratis hosting rechtstreeks vanuit je repository.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact" class="section alt">
+      <h2>Contact</h2>
+      <p>Bekijk de broncode op <a href="https://github.com/cveld/claude-tester" target="_blank" rel="noopener">GitHub</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 MijnSite &mdash; gebouwd met GitHub Actions &amp; Pages</p>
+  </footer>
+</body>
+</html>
