@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tekenveld</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    :root { --accent: #ef4444; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    .color-swatch {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: transform .15s, border-color .15s;
+    }
+    .color-swatch.active { border-color: #1e293b; transform: scale(1.2); }
+
+    .size-btn {
+      background: #e2e8f0;
+      border: 2px solid transparent;
+      border-radius: .5rem;
+      width: 36px; height: 36px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      transition: border-color .15s;
+    }
+    .size-btn.active { border-color: #1e293b; }
+
+    .divider { width: 1px; height: 32px; background: #e2e8f0; }
+
+    canvas {
+      display: block;
+      border-radius: var(--radius);
+      border: 1.5px solid #e2e8f0;
+      cursor: crosshair;
+      touch-action: none;
+      width: 100%;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo">Tekenveld</span>
+      <a href="../index.html" class="back-link">← Terug</a>
+    </nav>
+  </header>
+
+  <main class="experience">
+    <div class="toolbar" id="toolbar">
+      <!-- swatches -->
+      <div class="color-swatch active" style="background:#1e293b" data-color="#1e293b"></div>
+      <div class="color-swatch" style="background:#ef4444" data-color="#ef4444"></div>
+      <div class="color-swatch" style="background:#f59e0b" data-color="#f59e0b"></div>
+      <div class="color-swatch" style="background:#10b981" data-color="#10b981"></div>
+      <div class="color-swatch" style="background:#3b82f6" data-color="#3b82f6"></div>
+      <div class="color-swatch" style="background:#a855f7" data-color="#a855f7"></div>
+      <div class="color-swatch" style="background:#f8fafc" data-color="#f8fafc" style="border:2px solid #cbd5e1"></div>
+
+      <div class="divider"></div>
+
+      <!-- sizes -->
+      <button class="size-btn" data-size="4" style="font-size:.6rem">S</button>
+      <button class="size-btn active" data-size="10" style="font-size:.75rem">M</button>
+      <button class="size-btn" data-size="22" style="font-size:.9rem">L</button>
+
+      <div class="divider"></div>
+
+      <button class="btn secondary" id="clear-btn" style="padding:.4rem .9rem;font-size:.85rem">Wis</button>
+      <button class="btn" id="save-btn" style="padding:.4rem .9rem;font-size:.85rem">Opslaan</button>
+    </div>
+
+    <canvas id="canvas"></canvas>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let color = '#1e293b', size = 10, drawing = false, last = null;
+
+    function resize() {
+      const w = canvas.offsetWidth;
+      const tmp = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.width = w;
+      canvas.height = Math.round(w * .6);
+      ctx.putImageData(tmp, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+
+    function pos(e) {
+      const r = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / r.width;
+      const scaleY = canvas.height / r.height;
+      const src = e.touches ? e.touches[0] : e;
+      return { x: (src.clientX - r.left) * scaleX, y: (src.clientY - r.top) * scaleY };
+    }
+
+    function draw(e) {
+      if (!drawing) return;
+      e.preventDefault();
+      const p = pos(e);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = size;
+      ctx.beginPath();
+      ctx.moveTo(last.x, last.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      last = p;
+    }
+
+    canvas.addEventListener('pointerdown', e => { drawing = true; last = pos(e); ctx.beginPath(); });
+    canvas.addEventListener('pointermove', draw);
+    canvas.addEventListener('pointerup', () => drawing = false);
+    canvas.addEventListener('pointerleave', () => drawing = false);
+
+    // Color swatches
+    document.querySelectorAll('.color-swatch').forEach(s => {
+      s.addEventListener('click', () => {
+        document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('active'));
+        s.classList.add('active');
+        color = s.dataset.color;
+      });
+    });
+
+    // Size buttons
+    document.querySelectorAll('.size-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.size-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        size = +b.dataset.size;
+      });
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+
+    document.getElementById('save-btn').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.download = 'tekening.png';
+      a.href = canvas.toDataURL();
+      a.click();
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  </script>
+</body>
+</html>

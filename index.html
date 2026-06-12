@@ -3,54 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mijn Website</title>
+  <title>Experiences</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <nav>
-      <span class="logo">MijnSite</span>
-      <ul>
-        <li><a href="#home">Home</a></li>
-        <li><a href="#over">Over</a></li>
-        <li><a href="#contact">Contact</a></li>
-      </ul>
+      <span class="logo">Experiences</span>
     </nav>
   </header>
 
-  <main>
-    <section id="home" class="hero">
-      <h1>Welkom op mijn website</h1>
-      <p>Een simpele website, automatisch gebouwd en gepubliceerd via GitHub Pages.</p>
-      <a href="#over" class="btn">Meer lezen</a>
-    </section>
+  <main class="tile-grid">
+    <a href="experiences/kleur.html" class="tile" style="--accent:#6366f1">
+      <div class="tile-icon">🎨</div>
+      <h2>Kleurmixer</h2>
+      <p>Mix RGB-kleuren en kopieer HEX-waarden naar je klembord.</p>
+    </a>
 
-    <section id="over" class="section">
-      <h2>Over deze site</h2>
-      <div class="cards">
-        <div class="card">
-          <h3>HTML &amp; CSS</h3>
-          <p>Pure HTML en CSS, geen frameworks nodig voor een snelle, lichte pagina.</p>
-        </div>
-        <div class="card">
-          <h3>GitHub Actions</h3>
-          <p>Elke push naar <code>main</code> triggert een automatische deployment.</p>
-        </div>
-        <div class="card">
-          <h3>GitHub Pages</h3>
-          <p>Gratis hosting rechtstreeks vanuit je repository.</p>
-        </div>
-      </div>
-    </section>
+    <a href="experiences/geheugen.html" class="tile" style="--accent:#10b981">
+      <div class="tile-icon">🧠</div>
+      <h2>Geheugenspel</h2>
+      <p>Onthoud de reeks knopflitsen en herhaal zo lang mogelijk.</p>
+    </a>
 
-    <section id="contact" class="section alt">
-      <h2>Contact</h2>
-      <p>Bekijk de broncode op <a href="https://github.com/cveld/claude-tester" target="_blank" rel="noopener">GitHub</a>.</p>
-    </section>
+    <a href="experiences/klok.html" class="tile" style="--accent:#f59e0b">
+      <div class="tile-icon">🕐</div>
+      <h2>Woordklok</h2>
+      <p>De huidige tijd weergegeven in Nederlandse woorden.</p>
+    </a>
+
+    <a href="experiences/teken.html" class="tile" style="--accent:#ef4444">
+      <div class="tile-icon">✏️</div>
+      <h2>Tekenveld</h2>
+      <p>Teken vrij op een canvas met penseel en kleurenkeuze.</p>
+    </a>
   </main>
-
-  <footer>
-    <p>&copy; 2026 MijnSite &mdash; gebouwd met GitHub Actions &amp; Pages</p>
-  </footer>
 </body>
 </html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Woordklok</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    :root { --accent: #f59e0b; }
+
+    body { background: #0f172a; color: #fff; }
+    header { background: #1e293b; box-shadow: none; border-bottom: 1px solid #334155; }
+    .back-link { color: #94a3b8; }
+    .back-link:hover { color: #fff; }
+
+    .clock-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 60px);
+      padding: 2rem 1.5rem;
+      gap: 2rem;
+    }
+
+    .words {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: .6rem;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .word {
+      background: #1e293b;
+      border-radius: .5rem;
+      padding: .5rem .3rem;
+      text-align: center;
+      font-weight: 700;
+      font-size: clamp(.75rem, 3.5vw, 1rem);
+      color: #475569;
+      transition: color .4s, background .4s;
+      letter-spacing: .5px;
+    }
+    .word.on {
+      color: #fbbf24;
+      background: #292524;
+    }
+
+    .digital {
+      font-size: 1rem;
+      color: #475569;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo" style="color:#fbbf24">Woordklok</span>
+      <a href="../index.html" class="back-link">← Terug</a>
+    </nav>
+  </header>
+
+  <main class="clock-wrap">
+    <div class="words" id="words"></div>
+    <div class="digital" id="digital"></div>
+  </main>
+
+  <script>
+    // Grid: 5 columns × 7 rows = 35 words
+    const grid = [
+      // row 0
+      'HET', 'IS', 'BIJNA', 'PRECIES', 'HALF',
+      // row 1
+      'VIJF', 'TIEN', 'KWART', 'VOOR', 'OVER',
+      // row 2
+      'EEN', 'TWEE', 'DRIE', 'VIER', 'VIJF',
+      // row 3
+      'ZES', 'ZEVEN', 'ACHT', 'NEGEN', 'TIEN',
+      // row 4
+      'ELF', 'TWAALF', 'UUR', 'IN', 'DE',
+      // row 5
+      'OCHTEND', 'MIDDAG', 'AVOND', 'NACHT', '\'S',
+    ];
+
+    // Indices per word label
+    const idx = {};
+    grid.forEach((w, i) => { if (!idx[w]) idx[w] = []; idx[w].push(i); });
+    // Disambiguate duplicate labels by position
+    const VIJF_MIN = 5;   // row 1 col 0 → minutes
+    const VIJF_HR  = 22;  // row 2 col 4 → hour five (actually let's recheck)
+
+    const wrap = document.getElementById('words');
+    grid.forEach((w, i) => {
+      const d = document.createElement('div');
+      d.className = 'word';
+      d.textContent = w;
+      d.id = 'w' + i;
+      wrap.appendChild(d);
+    });
+
+    function setOn(indices) {
+      document.querySelectorAll('.word').forEach(el => el.classList.remove('on'));
+      indices.forEach(i => document.getElementById('w'+i)?.classList.add('on'));
+    }
+
+    function getWords(h, m) {
+      // always on: HET (0), IS (1)
+      const on = [0, 1];
+
+      // minute words
+      const minMap = {
+        0:  [],
+        5:  [5, 9],       // VIJF OVER
+        10: [6, 9],       // TIEN OVER
+        15: [7, 9],       // KWART OVER
+        20: [5, 6, 9],    // VIJF TIEN OVER (twintig = vijf over kwart)
+        25: [5, 3],       // VIJF VOOR HALF
+        30: [4],          // HALF
+        35: [5, 9],       // VIJF OVER HALF → teken als VIJF OVER [HALF]
+        40: [5, 6, 3],    // TWINTIG VOOR
+        45: [7, 3],       // KWART VOOR
+        50: [6, 3],       // TIEN VOOR
+        55: [5, 3],       // VIJF VOOR
+      };
+
+      // round to nearest 5
+      const r = Math.round(m / 5) * 5;
+      const minWords = minMap[r] || [];
+      on.push(...minWords);
+
+      // half hour shifts hour
+      let dispH = h % 12;
+      if (r >= 25 && r < 60) dispH = (dispH + 1) % 12; // half and "voor" refer to next hour
+
+      // HALF indicator
+      if (r === 30 || r === 35 || r === 25) on.push(4); // HALF
+
+      // hour words (row 2–4, cols 0-4 + row 4 col 0-1)
+      const hrWords = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+      // 0=EEN,1=TWEE,2=DRIE,3=VIER,4=VIJF(hr),5=ZES,6=ZEVEN,7=ACHT,8=NEGEN,9=TIEN(hr),10=ELF,11=TWAALF
+      if (hrWords[dispH] !== undefined) on.push(hrWords[dispH]);
+
+      // UUR only on exact hours
+      if (r === 0) on.push(22);
+
+      // time of day
+      const tod = h < 6 ? [29] : h < 12 ? [26] : h < 18 ? [27] : [28];
+      on.push(...tod);
+
+      return on;
+    }
+
+    function tick() {
+      const now = new Date();
+      const h = now.getHours(), m = now.getMinutes();
+      setOn(getWords(h, m));
+      document.getElementById('digital').textContent =
+        String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>

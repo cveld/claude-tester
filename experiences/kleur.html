@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kleurmixer</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    :root { --accent: #6366f1; }
+
+    .preview {
+      width: 100%;
+      height: 180px;
+      border-radius: var(--radius);
+      transition: background .1s;
+      margin-bottom: 1.5rem;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,.15);
+    }
+
+    .sliders { display: flex; flex-direction: column; gap: 1.2rem; margin-bottom: 1.5rem; }
+
+    .slider-row { display: flex; align-items: center; gap: 1rem; }
+    .slider-row label { width: 1.5rem; font-weight: 700; font-size: 1rem; }
+    .slider-row input[type=range] {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 8px;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+    }
+    #r-slider { background: linear-gradient(to right, #000, #f00); }
+    #g-slider { background: linear-gradient(to right, #000, #0f0); }
+    #b-slider { background: linear-gradient(to right, #000, #00f); }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: white;
+      border: 2px solid #94a3b8;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
+    }
+    .slider-row span { width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+    .hex-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: white;
+      border: 1.5px solid #e2e8f0;
+      border-radius: .6rem;
+      padding: .75rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .hex-value {
+      flex: 1;
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      font-family: monospace;
+    }
+    .copy-feedback {
+      font-size: .8rem;
+      color: #10b981;
+      opacity: 0;
+      transition: opacity .3s;
+    }
+    .copy-feedback.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo">Kleurmixer</span>
+      <a href="../index.html" class="back-link">← Terug</a>
+    </nav>
+  </header>
+
+  <main class="experience">
+    <div class="preview" id="preview"></div>
+
+    <div class="sliders">
+      <div class="slider-row">
+        <label style="color:#ef4444">R</label>
+        <input type="range" id="r-slider" min="0" max="255" value="99" />
+        <span id="r-val">99</span>
+      </div>
+      <div class="slider-row">
+        <label style="color:#10b981">G</label>
+        <input type="range" id="g-slider" min="0" max="255" value="102" />
+        <span id="g-val">102</span>
+      </div>
+      <div class="slider-row">
+        <label style="color:#6366f1">B</label>
+        <input type="range" id="b-slider" min="0" max="255" value="241" />
+        <span id="b-val">241</span>
+      </div>
+    </div>
+
+    <div class="hex-row">
+      <span class="hex-value" id="hex-value">#6366F1</span>
+      <span class="copy-feedback" id="copy-feedback">Gekopieerd!</span>
+      <button class="btn" onclick="copyHex()">Kopieer HEX</button>
+    </div>
+
+    <button class="btn secondary" onclick="randomColor()">Willekeurige kleur</button>
+  </main>
+
+  <script>
+    const r = document.getElementById('r-slider');
+    const g = document.getElementById('g-slider');
+    const b = document.getElementById('b-slider');
+
+    function update() {
+      const rv = +r.value, gv = +g.value, bv = +b.value;
+      document.getElementById('r-val').textContent = rv;
+      document.getElementById('g-val').textContent = gv;
+      document.getElementById('b-val').textContent = bv;
+      const hex = '#' + [rv, gv, bv].map(v => v.toString(16).padStart(2,'0')).join('').toUpperCase();
+      document.getElementById('preview').style.background = hex;
+      document.getElementById('hex-value').textContent = hex;
+    }
+
+    function copyHex() {
+      navigator.clipboard.writeText(document.getElementById('hex-value').textContent);
+      const fb = document.getElementById('copy-feedback');
+      fb.classList.add('show');
+      setTimeout(() => fb.classList.remove('show'), 1800);
+    }
+
+    function randomColor() {
+      r.value = Math.floor(Math.random() * 256);
+      g.value = Math.floor(Math.random() * 256);
+      b.value = Math.floor(Math.random() * 256);
+      update();
+    }
+
+    [r, g, b].forEach(el => el.addEventListener('input', update));
+    update();
+  </script>
+</body>
+</html>

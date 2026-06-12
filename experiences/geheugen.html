@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Geheugenspel</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    :root { --accent: #10b981; }
+
+    .status {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .status .round {
+      font-size: .85rem;
+      color: var(--muted);
+      margin-bottom: .25rem;
+    }
+    .status .message {
+      font-size: 1.1rem;
+      font-weight: 600;
+      min-height: 1.6em;
+    }
+
+    .pad {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      max-width: 360px;
+      margin: 0 auto 2rem;
+    }
+
+    .pad-btn {
+      height: 130px;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: filter .1s, transform .1s;
+      opacity: .7;
+    }
+    .pad-btn:nth-child(1) { background: #ef4444; }
+    .pad-btn:nth-child(2) { background: #3b82f6; }
+    .pad-btn:nth-child(3) { background: #f59e0b; }
+    .pad-btn:nth-child(4) { background: #10b981; }
+
+    .pad-btn.lit { opacity: 1; filter: brightness(1.4); transform: scale(.96); }
+    .pad-btn:disabled { cursor: default; }
+
+    .controls { display: flex; justify-content: center; gap: 1rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo">Geheugenspel</span>
+      <a href="../index.html" class="back-link">← Terug</a>
+    </nav>
+  </header>
+
+  <main class="experience">
+    <div class="status">
+      <div class="round" id="round-label">Ronde 0</div>
+      <div class="message" id="message">Druk op Start om te beginnen</div>
+    </div>
+
+    <div class="pad" id="pad">
+      <button class="pad-btn" data-i="0" disabled></button>
+      <button class="pad-btn" data-i="1" disabled></button>
+      <button class="pad-btn" data-i="2" disabled></button>
+      <button class="pad-btn" data-i="3" disabled></button>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="start-btn" onclick="startGame()">Start</button>
+    </div>
+  </main>
+
+  <script>
+    const btns = [...document.querySelectorAll('.pad-btn')];
+    let sequence = [], playerIndex = 0, accepting = false;
+
+    const sounds = [261, 329, 392, 523]; // C E G C — kleine toonladder
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function beep(freq, duration = 200) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(.3, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + duration / 1000);
+      o.start(); o.stop(ctx.currentTime + duration / 1000);
+    }
+
+    function light(i, duration = 400) {
+      return new Promise(res => {
+        btns[i].classList.add('lit');
+        beep(sounds[i], duration - 50);
+        setTimeout(() => { btns[i].classList.remove('lit'); res(); }, duration);
+      });
+    }
+
+    async function playSequence() {
+      setMessage('Kijk goed…');
+      setPad(false);
+      for (const i of sequence) {
+        await light(i);
+        await delay(100);
+      }
+      setPad(true);
+      setMessage('Jouw beurt!');
+      playerIndex = 0;
+    }
+
+    function startGame() {
+      sequence = [];
+      nextRound();
+    }
+
+    async function nextRound() {
+      sequence.push(Math.floor(Math.random() * 4));
+      setRound(sequence.length);
+      await delay(500);
+      await playSequence();
+    }
+
+    function handleClick(i) {
+      if (!accepting) return;
+      light(i, 250);
+      if (i !== sequence[playerIndex]) {
+        gameover();
+        return;
+      }
+      playerIndex++;
+      if (playerIndex === sequence.length) {
+        setPad(false);
+        setMessage('Goed! ✓');
+        setTimeout(nextRound, 900);
+      }
+    }
+
+    function gameover() {
+      setPad(false);
+      beep(110, 600);
+      setMessage(`Game over! Je haalde ronde ${sequence.length}.`);
+    }
+
+    function setPad(on) {
+      accepting = on;
+      btns.forEach(b => b.disabled = !on);
+    }
+    function setMessage(t) { document.getElementById('message').textContent = t; }
+    function setRound(n) { document.getElementById('round-label').textContent = `Ronde ${n}`; }
+    function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    btns.forEach(b => b.addEventListener('click', () => handleClick(+b.dataset.i)));
+  </script>
+</body>
+</html>
