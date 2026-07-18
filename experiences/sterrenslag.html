@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sterrenslag</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    :root {
+      --accent: #7c3aed;
+      --star: #d97706;
+      --star-ink: #78350f;
+      --line: #cbd5e1;
+      --line-strong: #1e293b;
+      --good-bg: #dcfce7;
+      --good-ink: #15803d;
+      --bad-bg: #fee2e2;
+      --bad-ink: #b91c1c;
+      --count-bg: #eef2f7;
+      --rA: #fde3d2; --rB: #d6e6f7; --rC: #ecdffa; --rD: #dcf3d8; --rE: #fce0ec;
+      --rF: #fff3c4; --rG: #d3f2ee; --rH: #f6ddec; --rI: #e7ecce; --rJ: #dde3f7; --rK: #f5e6cf;
+    }
+
+    .experience { max-width: 900px; }
+
+    .board-layout {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      margin-top: 1.5rem;
+    }
+
+    .board-col { display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto 1fr;
+      width: min(480px, 88vw);
+      gap: .3rem;
+    }
+    .colcounts { grid-column: 2; grid-row: 1; display: grid; grid-template-columns: repeat(11, 1fr); }
+    .rowcounts { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(11, 1fr); }
+    .count {
+      display: flex; align-items: center; justify-content: center;
+      font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums;
+      color: var(--muted); background: var(--count-bg); border-radius: 4px;
+      width: 1.4em; height: 1.4em; margin: auto;
+    }
+    .count.ok { color: var(--good-ink); background: var(--good-bg); }
+    .count.over { color: var(--bad-ink); background: var(--bad-bg); }
+
+    .board {
+      grid-column: 2; grid-row: 2;
+      display: grid;
+      grid-template-columns: repeat(11, 1fr);
+      aspect-ratio: 1;
+      border: 3px solid var(--line-strong);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--white);
+    }
+    .cell {
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      font-size: 0;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .cell:hover { filter: brightness(.94); }
+    .cell.star::after {
+      content: "★";
+      font-size: clamp(12px, 2.6vw, 20px);
+      color: var(--star);
+      -webkit-text-stroke: .5px var(--star-ink);
+    }
+    .cell.conflict { box-shadow: inset 0 0 0 2px var(--bad-ink); }
+    .cell.conflict::after { color: var(--bad-ink); }
+    .cell[data-br="1"] { border-right: 3px solid var(--line-strong); }
+    .cell[data-bb="1"] { border-bottom: 3px solid var(--line-strong); }
+    .cell[data-bl="1"] { border-left: 3px solid var(--line-strong); }
+    .cell[data-bt="1"] { border-top: 3px solid var(--line-strong); }
+
+    .toolbar { display: flex; gap: .6rem; flex-wrap: wrap; }
+
+    aside { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 1.25rem; }
+    .status {
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      font-size: .95rem; line-height: 1.5;
+      background: var(--count-bg); color: var(--text);
+    }
+    .status.good { background: var(--good-bg); color: var(--good-ink); }
+    .status.bad { background: var(--bad-bg); color: var(--bad-ink); }
+    .status strong { display: block; font-size: 1.05rem; margin-bottom: .15rem; }
+
+    .legend { display: flex; flex-direction: column; gap: .4rem; }
+    .legend h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .4rem; font-weight: 700; }
+    .legend-row { display: flex; align-items: center; gap: .55rem; font-size: .85rem; }
+    .legend-row .cnt { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-size: .8rem; }
+    .legend-row.ok .cnt { color: var(--good-ink); font-weight: 700; }
+    .legend-row.over .cnt { color: var(--bad-ink); font-weight: 700; }
+    .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--line); flex-shrink: 0; }
+
+    .note { font-size: .85rem; color: var(--muted); line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo">Sterrenslag</span>
+      <a href="../index.html" class="back-link">← Terug</a>
+    </nav>
+  </header>
+
+  <main class="experience">
+    <h1>Sterrenslag 11×11</h1>
+    <p class="note">Klik op een cel om een ster te zetten of weg te halen. Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
+
+    <div class="board-layout">
+      <div class="board-col">
+        <div class="board-grid">
+          <div class="colcounts" id="colcounts"></div>
+          <div class="rowcounts" id="rowcounts"></div>
+          <div class="board" id="board" aria-label="Interactief sterrenslag-bord"></div>
+        </div>
+        <div class="toolbar">
+          <button class="btn secondary" id="clearBtn">Wis bord</button>
+          <button class="btn" id="solveBtn">Toon de oplossing</button>
+        </div>
+      </div>
+
+      <aside>
+        <div class="status" id="status">
+          <strong>0 / 22 sterren geplaatst</strong>
+          Elke rij, kolom en regio heeft er 2 nodig.
+        </div>
+
+        <div class="legend">
+          <h2>Regio's (11)</h2>
+          <div id="legend-list"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const regionCells = {
+      A: [[4,1],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10],[4,11],[5,1],[5,3],[5,5],[5,9],[5,10],[5,11],[6,1],[6,3],[6,5],[6,6],[6,7],[6,9],[6,10],[6,11],[7,1],[7,3],[7,7],[7,9],[7,11],[8,1],[8,2],[8,3],[8,5],[8,6],[8,7],[8,9],[8,11]],
+      B: [[1,1],[1,2],[1,3],[1,4],[2,1],[2,2],[2,4],[2,6],[3,1],[3,4],[3,5],[3,6],[3,7],[3,8],[3,9]],
+      C: [[8,4],[9,2],[9,3],[9,4],[9,5],[10,2],[10,3],[10,5],[10,6],[10,7]],
+      D: [[5,6],[5,7],[5,8],[6,8],[7,8],[8,8],[9,6],[9,7],[9,8]],
+      E: [[9,1],[10,1],[10,4],[11,1],[11,2],[11,3],[11,4],[11,5],[11,6]],
+      F: [[1,5],[1,6],[1,7],[1,8],[1,9],[1,10],[2,5],[2,7]],
+      G: [[1,11],[2,8],[2,9],[2,10],[2,11],[3,10],[3,11]],
+      H: [[2,3],[3,2],[3,3],[4,2],[5,2],[6,2],[7,2]],
+      I: [[7,10],[8,10],[9,9],[9,10],[9,11],[10,10],[10,11]],
+      J: [[10,8],[10,9],[11,7],[11,8],[11,9],[11,10],[11,11]],
+      K: [[5,4],[6,4],[7,4],[7,5],[7,6]],
+    };
+    const solutionStars = new Set(["1,3","1,5","2,7","2,9","3,5","3,11","4,2","4,8","5,6","5,10","6,2","6,4","7,6","7,10","8,4","8,8","9,1","9,11","10,3","10,9","11,1","11,7"]);
+
+    const n = 11;
+    const cellRegion = {};
+    for (const [reg, cells] of Object.entries(regionCells)) {
+      for (const [r, c] of cells) cellRegion[`${r},${c}`] = reg;
+    }
+
+    let stars = new Set();
+
+    const board = document.getElementById('board');
+    const colcounts = document.getElementById('colcounts');
+    const rowcounts = document.getElementById('rowcounts');
+    const legend = document.getElementById('legend-list');
+    const statusEl = document.getElementById('status');
+
+    const cellEls = {};
+    for (let r = 1; r <= n; r++) {
+      for (let c = 1; c <= n; c++) {
+        const div = document.createElement('div');
+        const reg = cellRegion[`${r},${c}`];
+        div.className = 'cell';
+        div.style.background = `var(--r${reg})`;
+        if (cellRegion[`${r},${c+1}`] !== reg) div.dataset.br = "1";
+        if (cellRegion[`${r+1},${c}`] !== reg && r < n) div.dataset.bb = "1";
+        if (c === 1 || cellRegion[`${r},${c-1}`] !== reg) div.dataset.bl = "1";
+        if (r === 1 || cellRegion[`${r-1},${c}`] !== reg) div.dataset.bt = "1";
+        div.addEventListener('click', () => toggle(r, c));
+        div.setAttribute('role', 'button');
+        div.setAttribute('aria-label', `rij ${r}, kolom ${c}`);
+        board.appendChild(div);
+        cellEls[`${r},${c}`] = div;
+      }
+    }
+    for (let c = 1; c <= n; c++) {
+      const d = document.createElement('div'); d.className = 'count'; d.id = `col-${c}`;
+      colcounts.appendChild(d);
+    }
+    for (let r = 1; r <= n; r++) {
+      const d = document.createElement('div'); d.className = 'count'; d.id = `row-${r}`;
+      rowcounts.appendChild(d);
+    }
+
+    const regionSizes = {};
+    for (const [reg, cells] of Object.entries(regionCells)) regionSizes[reg] = cells.length;
+    for (const reg of Object.keys(regionCells).sort()) {
+      const row = document.createElement('div');
+      row.className = 'legend-row';
+      row.id = `legend-${reg}`;
+      row.innerHTML = `<span class="swatch" style="background:var(--r${reg})"></span><span>Regio ${reg} — ${regionSizes[reg]} cellen</span><span class="cnt" id="regcnt-${reg}">0/2</span>`;
+      legend.appendChild(row);
+    }
+
+    function toggle(r, c) {
+      const key = `${r},${c}`;
+      if (stars.has(key)) stars.delete(key); else stars.add(key);
+      render();
+    }
+
+    function key(r, c) { return `${r},${c}`; }
+    function isAdjacent(a, b) {
+      const [r1, c1] = a.split(',').map(Number);
+      const [r2, c2] = b.split(',').map(Number);
+      return Math.abs(r1 - r2) <= 1 && Math.abs(c1 - c2) <= 1 && key(r1, c1) !== key(r2, c2);
+    }
+
+    function render() {
+      const rowCount = Array(n + 1).fill(0);
+      const colCount = Array(n + 1).fill(0);
+      const regCount = {}; for (const reg of Object.keys(regionCells)) regCount[reg] = 0;
+      const conflicted = new Set();
+
+      for (const k of stars) {
+        const [r, c] = k.split(',').map(Number);
+        rowCount[r]++; colCount[c]++; regCount[cellRegion[k]]++;
+      }
+      const starArr = [...stars];
+      for (let i = 0; i < starArr.length; i++) {
+        for (let j = i + 1; j < starArr.length; j++) {
+          if (isAdjacent(starArr[i], starArr[j])) {
+            conflicted.add(starArr[i]); conflicted.add(starArr[j]);
+          }
+        }
+      }
+
+      for (const [k, div] of Object.entries(cellEls)) {
+        div.classList.toggle('star', stars.has(k));
+        div.classList.toggle('conflict', conflicted.has(k));
+      }
+      for (let r = 1; r <= n; r++) {
+        const el = document.getElementById(`row-${r}`);
+        el.textContent = rowCount[r];
+        el.className = 'count' + (rowCount[r] === 2 ? ' ok' : rowCount[r] > 2 ? ' over' : '');
+      }
+      for (let c = 1; c <= n; c++) {
+        const el = document.getElementById(`col-${c}`);
+        el.textContent = colCount[c];
+        el.className = 'count' + (colCount[c] === 2 ? ' ok' : colCount[c] > 2 ? ' over' : '');
+      }
+      for (const reg of Object.keys(regionCells)) {
+        const el = document.getElementById(`regcnt-${reg}`);
+        const row = document.getElementById(`legend-${reg}`);
+        el.textContent = `${regCount[reg]}/2`;
+        row.className = 'legend-row' + (regCount[reg] === 2 ? ' ok' : regCount[reg] > 2 ? ' over' : '');
+      }
+
+      const total = stars.size;
+      const rowsOk = rowCount.slice(1).every(v => v === 2);
+      const colsOk = colCount.slice(1).every(v => v === 2);
+      const regsOk = Object.values(regCount).every(v => v === 2);
+      const noConflict = conflicted.size === 0;
+
+      if (total === 22 && rowsOk && colsOk && regsOk && noConflict) {
+        statusEl.className = 'status good';
+        statusEl.innerHTML = `<strong>Opgelost! ✓</strong>Elke rij, kolom en regio heeft precies 2 sterren, en geen enkele raakt een andere aan.`;
+      } else if (conflicted.size > 0) {
+        statusEl.className = 'status bad';
+        statusEl.innerHTML = `<strong>${total} / 22 sterren geplaatst</strong>Twee sterren raken elkaar aan (rood) — dat mag niet, ook niet diagonaal.`;
+      } else {
+        statusEl.className = 'status';
+        statusEl.innerHTML = `<strong>${total} / 22 sterren geplaatst</strong>Elke rij, kolom en regio heeft er 2 nodig.`;
+      }
+    }
+
+    document.getElementById('clearBtn').addEventListener('click', () => { stars = new Set(); render(); });
+    document.getElementById('solveBtn').addEventListener('click', () => { stars = new Set(solutionStars); render(); });
+
+    render();
+  </script>
+</body>
+</html>
