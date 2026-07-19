@@ -83,10 +83,15 @@
     }
     .player-row .name { flex: 1; font-weight: 600; font-size: .9rem; }
     .player-row .rating { font-size: .8rem; color: var(--muted); width: 2rem; text-align: right; }
+    .player-row .value { font-size: .78rem; color: var(--muted); width: 4.2rem; text-align: right; flex-shrink: 0; }
     .fitness-bar { width: 90px; height: 8px; border-radius: 4px; background: #e2e8f0; overflow: hidden; flex-shrink: 0; }
     .fitness-bar i { display: block; height: 100%; background: #10b981; }
     .player-row.rested { opacity: .5; }
+    .player-row.injured { opacity: .6; }
     .player-row label { display: flex; align-items: center; gap: .35rem; font-size: .75rem; color: var(--muted); cursor: pointer; white-space: nowrap; }
+    .injury-tag { font-size: .78rem; color: #b91c1c; white-space: nowrap; }
+    .warn-text { color: #b91c1c; font-size: .8rem; margin: .25rem 0 .5rem; }
+    .small-btn { padding: .35rem .8rem; font-size: .75rem; }
 
     .tactic-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: .75rem; margin: 1rem 0; }
     .tactic-options label {
@@ -103,6 +108,10 @@
     .tactic-options .t-name { font-weight: 700; display: block; margin-bottom: .25rem; }
     .tactic-options .t-desc { font-size: .78rem; color: var(--muted); }
 
+    .scouting { text-align: center; font-size: .85rem; color: var(--muted); margin: .5rem 0 1rem; }
+    .scouting strong { color: var(--text); }
+    .counter-tag { color: #047857; font-weight: 700; }
+
     .fixture { text-align: center; margin: 1rem 0; }
     .fixture .vs { font-size: 1.4rem; font-weight: 800; }
     .fixture .venue { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
@@ -114,6 +123,7 @@
     .events li { padding: .35rem 0; border-bottom: 1px solid #edf1f5; display: flex; gap: .5rem; }
     .events li .min { color: var(--muted); width: 2.5rem; flex-shrink: 0; }
     .events li.home { font-weight: 600; }
+    .events li.injury { color: #b91c1c; }
 
     .banner {
       border-radius: .6rem;
@@ -130,6 +140,15 @@
 
     .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
     .muted-small { font-size: .8rem; color: var(--muted); margin-top: .5rem; }
+    .form-badges { display: flex; gap: .3rem; justify-content: center; margin-top: .35rem; }
+    .form-badges span {
+      width: 1.5rem; height: 1.5rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .7rem; font-weight: 700; color: #fff;
+    }
+    .form-badges .W { background: #10b981; }
+    .form-badges .D { background: #f59e0b; }
+    .form-badges .L { background: #ef4444; }
   </style>
 </head>
 <body>
@@ -147,18 +166,28 @@
 
   <script>
     const HOME_ADV = 0.35;
+    const SKILL_DIVISOR = 12; // lager = sterkteverschil weegt zwaarder mee dan geluk
     const POS_NEED = { GK: 1, DEF: 4, MID: 3, ATT: 3 };
-    const SAVE_KEY = 'ajax-manager-save-v1';
+    const SAVE_KEY = 'ajax-manager-save-v2';
+    const STYLES = ['Aanvallend', 'Gebalanceerd', 'Verdedigend'];
 
     let currentView = 'dashboard';
     let pendingTactic = 'Gebalanceerd';
     let lastMatchResult = null;
 
     const TACTICS = {
-      Aanvallend:   { attack: 1.15, defense: 0.88, desc: 'Meer druk voorin, kwetsbaarder achterin.' },
+      Aanvallend:   { attack: 1.15, defense: 0.85, desc: 'Meer druk voorin, kwetsbaarder achterin.' },
       Gebalanceerd: { attack: 1.0,  defense: 1.0,  desc: 'Een neutrale, evenwichtige aanpak.' },
       Verdedigend:  { attack: 0.85, defense: 1.15, desc: 'Stevig achterin, minder scherp voorin.' },
     };
+
+    function getCounterMultipliers(tactic, oppStyle) {
+      if (oppStyle === 'Aanvallend' && tactic === 'Verdedigend') return { attack: 1.05, defense: 1.08 };
+      if (oppStyle === 'Verdedigend' && tactic === 'Aanvallend') return { attack: 1.08, defense: 1.0 };
+      return { attack: 1.0, defense: 1.0 };
+    }
+
+    function randomStyle() { return STYLES[randInt(0, STYLES.length - 1)]; }
 
     function baseTeams() {
       return [
@@ -185,28 +214,41 @@
 
     function baseSquad() {
       return [
-        { id: 1, name: 'R. van Dijk', pos: 'GK', rating: 82, fitness: 100, rested: false },
-        { id: 2, name: 'B. Kessler', pos: 'GK', rating: 70, fitness: 100, rested: false },
+        { id: 1, name: 'R. van Dijk', pos: 'GK', rating: 82, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 2, name: 'B. Kessler', pos: 'GK', rating: 70, fitness: 100, rested: false, injuredUntil: -1 },
 
-        { id: 3, name: 'J. Timmermans', pos: 'DEF', rating: 79, fitness: 100, rested: false },
-        { id: 4, name: 'D. Osei', pos: 'DEF', rating: 77, fitness: 100, rested: false },
-        { id: 5, name: 'L. de Ridder', pos: 'DEF', rating: 76, fitness: 100, rested: false },
-        { id: 6, name: 'M. Verhoeven', pos: 'DEF', rating: 75, fitness: 100, rested: false },
-        { id: 7, name: 'F. Bakker', pos: 'DEF', rating: 68, fitness: 100, rested: false },
-        { id: 8, name: 'S. el Idrissi', pos: 'DEF', rating: 66, fitness: 100, rested: false },
+        { id: 3, name: 'J. Timmermans', pos: 'DEF', rating: 79, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 4, name: 'D. Osei', pos: 'DEF', rating: 77, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 5, name: 'L. de Ridder', pos: 'DEF', rating: 76, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 6, name: 'M. Verhoeven', pos: 'DEF', rating: 75, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 7, name: 'F. Bakker', pos: 'DEF', rating: 68, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 8, name: 'S. el Idrissi', pos: 'DEF', rating: 66, fitness: 100, rested: false, injuredUntil: -1 },
 
-        { id: 9,  name: 'K. Vermeulen', pos: 'MID', rating: 80, fitness: 100, rested: false },
-        { id: 10, name: 'T. Janssen', pos: 'MID', rating: 78, fitness: 100, rested: false },
-        { id: 11, name: 'Y. Boateng', pos: 'MID', rating: 77, fitness: 100, rested: false },
-        { id: 12, name: 'R. Smeets', pos: 'MID', rating: 69, fitness: 100, rested: false },
-        { id: 13, name: 'N. Kuypers', pos: 'MID', rating: 67, fitness: 100, rested: false },
-        { id: 14, name: 'A. Dekker', pos: 'MID', rating: 65, fitness: 100, rested: false },
+        { id: 9,  name: 'K. Vermeulen', pos: 'MID', rating: 80, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 10, name: 'T. Janssen', pos: 'MID', rating: 78, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 11, name: 'Y. Boateng', pos: 'MID', rating: 77, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 12, name: 'R. Smeets', pos: 'MID', rating: 69, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 13, name: 'N. Kuypers', pos: 'MID', rating: 67, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 14, name: 'A. Dekker', pos: 'MID', rating: 65, fitness: 100, rested: false, injuredUntil: -1 },
 
-        { id: 15, name: 'S. Bergmann', pos: 'ATT', rating: 81, fitness: 100, rested: false },
-        { id: 16, name: 'I. Koffi', pos: 'ATT', rating: 83, fitness: 100, rested: false },
-        { id: 17, name: 'W. van der Berg', pos: 'ATT', rating: 79, fitness: 100, rested: false },
-        { id: 18, name: 'C. Marchetti', pos: 'ATT', rating: 70, fitness: 100, rested: false },
+        { id: 15, name: 'S. Bergmann', pos: 'ATT', rating: 81, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 16, name: 'I. Koffi', pos: 'ATT', rating: 83, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 17, name: 'W. van der Berg', pos: 'ATT', rating: 79, fitness: 100, rested: false, injuredUntil: -1 },
+        { id: 18, name: 'C. Marchetti', pos: 'ATT', rating: 70, fitness: 100, rested: false, injuredUntil: -1 },
       ];
+    }
+
+    const SURNAME_POOL = ['Vermeer', 'de Groot', 'Hendriks', 'Willems', 'Peeters', 'van Dam', 'Scholten', 'Mensah', 'Owusu', 'Kuipers', 'Postma', 'Brouwer', 'Visser', 'Bosman', 'Kramer', 'Achterberg'];
+    const INITIAL_POOL = ['A', 'B', 'D', 'E', 'F', 'J', 'K', 'L', 'M', 'R', 'S', 'T'];
+    function randomName() { return `${INITIAL_POOL[randInt(0, INITIAL_POOL.length - 1)]}. ${SURNAME_POOL[randInt(0, SURNAME_POOL.length - 1)]}`; }
+
+    function generateTransferCandidates(obj) {
+      const positions = ['GK', 'DEF', 'DEF', 'MID', 'MID', 'ATT'];
+      return positions.map(pos => {
+        const rating = randInt(60, 88);
+        const price = Math.max(40, Math.round(rating * 8 + randInt(-30, 30)));
+        return { id: obj.nextPlayerId++, name: randomName(), pos, rating, price };
+      });
     }
 
     function freshTableRow(team) {
@@ -234,8 +276,8 @@
     }
 
     function newGameState() {
-      const teams = baseTeams().map(freshTableRow);
-      return {
+      const teams = baseTeams().map(t => freshTableRow({ ...t, style: randomStyle() }));
+      const obj = {
         season: 1,
         matchdayIndex: 0,
         teams,
@@ -243,7 +285,15 @@
         schedule: generateSchedule(teams.map(t => t.id)),
         history: [],
         goalAchieved: false,
+        budget: 300,
+        form: 0,
+        recentForm: [],
+        trainingFocus: 'Conditie',
+        nextPlayerId: 19,
+        transferList: [],
       };
+      obj.transferList = generateTransferCandidates(obj);
+      return obj;
     }
 
     function load() {
@@ -281,6 +331,7 @@
     }
 
     function effective(p) { return p.rating * (0.7 + 0.3 * p.fitness / 100); }
+    function isAvailable(p) { return p.injuredUntil <= state.matchdayIndex; }
 
     function ajaxTeam() { return state.teams.find(t => t.isAjax); }
 
@@ -292,7 +343,7 @@
 
     function selectLineup(squad) {
       const groups = { GK: [], DEF: [], MID: [], ATT: [] };
-      squad.forEach(p => groups[p.pos].push(p));
+      squad.forEach(p => { if (isAvailable(p)) groups[p.pos].push(p); });
       const lineup = [];
       Object.keys(POS_NEED).forEach(pos => {
         const pool = groups[pos].slice().sort((a, b) => effective(b) - effective(a));
@@ -307,7 +358,7 @@
     }
 
     function restedCountAvailable(pos) {
-      const pool = state.squad.filter(p => p.pos === pos);
+      const pool = state.squad.filter(p => p.pos === pos && isAvailable(p));
       const restedCount = pool.filter(p => p.rested).length;
       return pool.length - POS_NEED[pos] - restedCount;
     }
@@ -321,11 +372,14 @@
       render();
     }
 
-    function simulateGenericMatch(homeStrength, awayStrength) {
-      const homeVar = homeStrength + randInt(-4, 4);
-      const awayVar = awayStrength + randInt(-4, 4);
-      const expHome = clamp(1.3 + (homeVar - awayVar) / 20 + HOME_ADV, 0.2, 4.5);
-      const expAway = clamp(1.3 + (awayVar - homeVar) / 20 - HOME_ADV * 0.5, 0.2, 4.5);
+    function simulateGenericMatch(homeTeam, awayTeam) {
+      const homeVar = homeTeam.strength + randInt(-4, 4);
+      const awayVar = awayTeam.strength + randInt(-4, 4);
+      const hs = TACTICS[homeTeam.style], as = TACTICS[awayTeam.style];
+      const homeAttack = homeVar * hs.attack, homeDefense = homeVar * hs.defense;
+      const awayAttack = awayVar * as.attack, awayDefense = awayVar * as.defense;
+      const expHome = clamp(1.3 + (homeAttack - awayDefense) / SKILL_DIVISOR + HOME_ADV, 0.15, 5.5);
+      const expAway = clamp(1.3 + (awayAttack - homeDefense) / SKILL_DIVISOR - HOME_ADV * 0.5, 0.15, 5.5);
       return [poisson(expHome), poisson(expAway)];
     }
 
@@ -341,7 +395,8 @@
     }
 
     function playMatchday() {
-      const matchday = state.schedule[state.matchdayIndex];
+      const mdIdx = state.matchdayIndex;
+      const matchday = state.schedule[mdIdx];
       const ajax = ajaxTeam();
       const ajaxFixture = matchday.find(([h, a]) => h === ajax.id || a === ajax.id);
       const ajaxIsHome = ajaxFixture[0] === ajax.id;
@@ -350,15 +405,21 @@
 
       const lineup = selectLineup(state.squad);
       const tactic = TACTICS[pendingTactic];
+      const counter = getCounterMultipliers(pendingTactic, opp.style);
       const atkPool = lineup.filter(p => p.pos === 'MID' || p.pos === 'ATT');
       const defPool = lineup.filter(p => p.pos === 'GK' || p.pos === 'DEF');
-      const attackPower = (atkPool.reduce((s, p) => s + effective(p), 0) / atkPool.length) * tactic.attack;
-      const defensePower = (defPool.reduce((s, p) => s + effective(p), 0) / defPool.length) * tactic.defense;
+      const formMult = 1 + state.form * 0.015;
+      const attackPower = atkPool.length
+        ? (atkPool.reduce((s, p) => s + effective(p), 0) / atkPool.length) * tactic.attack * counter.attack * formMult
+        : 30;
+      const defensePower = defPool.length
+        ? (defPool.reduce((s, p) => s + effective(p), 0) / defPool.length) * tactic.defense * counter.defense * formMult
+        : 30;
 
       const oppVar = opp.strength + randInt(-4, 4);
       const home = ajaxIsHome ? HOME_ADV : -HOME_ADV * 0.5;
-      const expAjax = clamp(1.3 + (attackPower - oppVar) / 20 + home, 0.2, 4.8);
-      const expOpp = clamp(1.3 + (oppVar - defensePower) / 20 - home, 0.2, 4.8);
+      const expAjax = clamp(1.3 + (attackPower - oppVar) / SKILL_DIVISOR + home, 0.15, 5.5);
+      const expOpp = clamp(1.3 + (oppVar - defensePower) / SKILL_DIVISOR - home, 0.15, 5.5);
       const ajaxGoals = poisson(expAjax);
       const oppGoals = poisson(expOpp);
 
@@ -371,7 +432,6 @@
       for (let i = 0; i < oppGoals; i++) {
         events.push({ minute: randInt(1, 90), side: 'opp', text: `⚽ Doelpunt voor ${opp.name}` });
       }
-      events.sort((a, b) => a.minute - b.minute);
 
       applyResult(
         ajaxIsHome ? ajax.id : opp.id,
@@ -384,18 +444,47 @@
         if (h === ajax.id || a === ajax.id) return;
         const th = state.teams.find(t => t.id === h);
         const ta = state.teams.find(t => t.id === a);
-        const [hg, ag] = simulateGenericMatch(th.strength, ta.strength);
+        const [hg, ag] = simulateGenericMatch(th, ta);
         applyResult(h, a, hg, ag);
       });
 
       state.squad.forEach(p => {
         const played = lineup.includes(p);
-        if (played) p.fitness = Math.max(30, p.fitness - randInt(8, 15));
-        else p.fitness = Math.min(100, p.fitness + randInt(10, 18));
+        if (played) {
+          const preFitness = p.fitness;
+          const conditionBonus = state.trainingFocus === 'Conditie' ? 3 : 0;
+          p.fitness = Math.max(30, p.fitness - randInt(8, 15) + conditionBonus);
+          const injuryChance = preFitness < 60 ? clamp((60 - preFitness) / 250, 0, 0.3) : 0;
+          if (Math.random() < injuryChance) {
+            const duration = randInt(1, 3);
+            p.injuredUntil = mdIdx + 1 + duration;
+            events.push({ minute: randInt(1, 90), side: 'injury', text: `🤕 ${p.name} raakt geblesseerd (${duration} wedstrijden uit)` });
+          }
+        } else {
+          p.fitness = Math.min(100, p.fitness + randInt(10, 18));
+        }
       });
+      events.sort((a, b) => a.minute - b.minute);
+
+      let budgetGained = 0;
+      if (ajaxGoals > oppGoals) {
+        budgetGained = 15;
+        state.form = clamp(state.form + 1, -5, 5);
+        state.recentForm.push('W');
+      } else if (ajaxGoals === oppGoals) {
+        budgetGained = 5;
+        state.form = clamp(Math.trunc(state.form / 2), -5, 5);
+        state.recentForm.push('D');
+      } else {
+        state.form = clamp(state.form - 1, -5, 5);
+        state.recentForm.push('L');
+      }
+      state.budget += budgetGained;
+      if (state.recentForm.length > 5) state.recentForm.shift();
 
       lastMatchResult = {
-        opp, ajaxIsHome, ajaxGoals, oppGoals, events,
+        opp, ajaxIsHome, ajaxGoals, oppGoals, events, budgetGained,
+        counterActive: counter.attack > 1 || counter.defense > 1,
         homeName: ajaxIsHome ? 'Ajax' : opp.name,
         awayName: ajaxIsHome ? opp.name : 'Ajax',
         homeGoals: ajaxIsHome ? ajaxGoals : oppGoals,
@@ -428,15 +517,19 @@
       const position = table.findIndex(t => t.isAjax) + 1;
       const achieved = position <= 3;
       if (achieved) state.goalAchieved = true;
-      state.history.push({ season: state.season, position, achieved });
+      const bonus = position === 1 ? 800 : position === 2 ? 600 : position === 3 ? 500 : position <= 6 ? 350 : position <= 12 ? 150 : 50;
+      state.budget += bonus;
+      state.history.push({ season: state.season, position, achieved, bonus });
     }
 
     function startNewSeason() {
       state.season++;
       state.matchdayIndex = 0;
+      state.form = 0;
+      state.recentForm = [];
       state.teams = state.teams.map(t => {
         const drifted = clamp(t.strength + randInt(-2, 3), 50, 92);
-        return freshTableRow({ id: t.id, name: t.name, strength: drifted, isAjax: t.isAjax });
+        return freshTableRow({ id: t.id, name: t.name, strength: drifted, isAjax: t.isAjax, style: randomStyle() });
       });
       const order = state.teams.map(t => t.id).sort(() => Math.random() - 0.5);
       const ajaxIdIdx = order.indexOf('ajx');
@@ -446,9 +539,46 @@
       state.squad.forEach(p => {
         p.fitness = 100;
         p.rested = false;
-        p.rating = clamp(p.rating + randInt(-2, 3), 45, 95);
+        p.injuredUntil = -1;
+        let driftMin = -2, driftMax = 3;
+        const isAttackGroup = p.pos === 'MID' || p.pos === 'ATT';
+        const isDefenseGroup = p.pos === 'GK' || p.pos === 'DEF';
+        if (state.trainingFocus === 'Aanval' && isAttackGroup) { driftMin = -1; driftMax = 4; }
+        if (state.trainingFocus === 'Verdediging' && isDefenseGroup) { driftMin = -1; driftMax = 4; }
+        p.rating = clamp(p.rating + randInt(driftMin, driftMax), 45, 95);
       });
+      state.transferList = generateTransferCandidates(state);
       currentView = 'dashboard';
+      save();
+      render();
+    }
+
+    function setTrainingFocus(f) {
+      state.trainingFocus = f;
+      save();
+      render();
+    }
+
+    function buyPlayer(id) {
+      const idx = state.transferList.findIndex(c => c.id === id);
+      if (idx === -1) return;
+      const c = state.transferList[idx];
+      if (state.budget < c.price || state.squad.length >= 24) return;
+      state.budget -= c.price;
+      state.squad.push({ id: state.nextPlayerId++, name: c.name, pos: c.pos, rating: c.rating, fitness: 100, rested: false, injuredUntil: -1 });
+      state.transferList.splice(idx, 1);
+      save();
+      render();
+    }
+
+    function sellPlayer(id) {
+      const p = state.squad.find(pl => pl.id === id);
+      if (!p) return;
+      const poolCount = state.squad.filter(q => q.pos === p.pos).length;
+      if (poolCount <= POS_NEED[p.pos]) return;
+      const value = Math.round(p.rating * 6);
+      state.budget += value;
+      state.squad = state.squad.filter(pl => pl.id !== id);
       save();
       render();
     }
@@ -464,6 +594,7 @@
         ['dashboard', 'Overzicht'],
         ['squad', 'Selectie'],
         ['table', 'Stand'],
+        ['transfer', 'Transfermarkt'],
       ];
       return `<div class="tabs">${tabs.map(([id, label]) =>
         `<button class="${currentView === id ? 'active' : ''}" onclick="goTo('${id}')">${label}</button>`
@@ -475,10 +606,19 @@
     function viewHtml() {
       if (currentView === 'squad') return squadHtml();
       if (currentView === 'table') return tableHtml();
+      if (currentView === 'transfer') return transferHtml();
       if (currentView === 'match') return matchPrepHtml();
       if (currentView === 'matchresult') return matchResultHtml();
       if (currentView === 'seasonend') return seasonEndHtml();
       return dashboardHtml();
+    }
+
+    function formLabel(f) {
+      if (f >= 3) return '🔥 Uitstekende vorm';
+      if (f >= 1) return '📈 Goede vorm';
+      if (f <= -3) return '🥶 Slechte vorm';
+      if (f <= -1) return '📉 Matige vorm';
+      return '➖ Neutrale vorm';
     }
 
     function dashboardHtml() {
@@ -520,7 +660,10 @@
             <div class="stat"><div class="label">Punten</div><div class="value">${ajax.pts}</div></div>
             <div class="stat"><div class="label">Gespeeld</div><div class="value">${ajax.played}/${totalMd}</div></div>
             <div class="stat"><div class="label">Doelsaldo</div><div class="value">${ajax.gf - ajax.ga >= 0 ? '+' : ''}${ajax.gf - ajax.ga}</div></div>
+            <div class="stat"><div class="label">Budget</div><div class="value">€${state.budget}k</div></div>
+            <div class="stat"><div class="label">Vorm</div><div class="value" style="font-size:.95rem">${formLabel(state.form)}</div></div>
           </div>
+          ${state.recentForm.length ? `<div class="form-badges">${state.recentForm.map(r => `<span class="${r}">${r}</span>`).join('')}</div>` : ''}
         </div>
         <div class="card">
           <h2>Doel: eindig top 3 voor Champions League-voetbal</h2>
@@ -540,7 +683,7 @@
           <h2>Seizoensgeschiedenis</h2>
           <ul class="history-list">
             ${state.history.slice().reverse().map(h =>
-              `<li><span>Seizoen ${h.season}</span><span>${h.position}e plaats ${h.achieved ? '🏆' : ''}</span></li>`
+              `<li><span>Seizoen ${h.season}</span><span>${h.position}e plaats ${h.achieved ? '🏆' : ''} (+€${h.bonus}k)</span></li>`
             ).join('')}
           </ul>
         </div>
@@ -552,19 +695,35 @@
       return `
         <div class="card">
           <h2>Selectie & fitheid</h2>
-          <p class="muted-small">Laat spelers rusten om fitheid te sparen — een uitgeruste ploeg presteert beter.</p>
-          ${Object.keys(order).map(pos => `
+          <p class="muted-small">Laat spelers rusten om fitheid te sparen. Speel je een speler te vaak uitgeput, dan loopt hij risico op een blessure.</p>
+          ${Object.keys(order).map(pos => {
+            const healthyCount = state.squad.filter(p => p.pos === pos && isAvailable(p)).length;
+            return `
             <h3>${order[pos]}</h3>
-            ${state.squad.filter(p => p.pos === pos).sort((a,b) => b.rating - a.rating).map(p => `
-              <div class="player-row ${p.rested ? 'rested' : ''}">
-                <span class="pos-badge">${pos}</span>
-                <span class="name">${p.name}</span>
-                <span class="rating">${p.rating}</span>
-                <div class="fitness-bar"><i style="width:${p.fitness}%; background:${p.fitness > 60 ? '#10b981' : p.fitness > 35 ? '#f59e0b' : '#ef4444'}"></i></div>
-                <label><input type="checkbox" ${p.rested ? 'checked' : ''} onchange="toggleRest(${p.id})" ${(!p.rested && restedCountAvailable(pos) <= 0) ? 'disabled' : ''}> rust</label>
-              </div>
-            `).join('')}
-          `).join('')}
+            ${healthyCount < POS_NEED[pos] ? `<p class="warn-text">⚠️ Te weinig fitte spelers beschikbaar in deze linie!</p>` : ''}
+            ${state.squad.filter(p => p.pos === pos).sort((a,b) => b.rating - a.rating).map(p => {
+              const injured = !isAvailable(p);
+              if (injured) {
+                const remaining = p.injuredUntil - state.matchdayIndex;
+                return `
+                  <div class="player-row injured">
+                    <span class="pos-badge">${pos}</span>
+                    <span class="name">${p.name}</span>
+                    <span class="rating">${p.rating}</span>
+                    <span class="injury-tag">🤕 nog ${remaining} wedstrijd${remaining === 1 ? '' : 'en'}</span>
+                  </div>`;
+              }
+              return `
+                <div class="player-row ${p.rested ? 'rested' : ''}">
+                  <span class="pos-badge">${pos}</span>
+                  <span class="name">${p.name}</span>
+                  <span class="rating">${p.rating}</span>
+                  <div class="fitness-bar"><i style="width:${p.fitness}%; background:${p.fitness > 60 ? '#10b981' : p.fitness > 35 ? '#f59e0b' : '#ef4444'}"></i></div>
+                  <label><input type="checkbox" ${p.rested ? 'checked' : ''} onchange="toggleRest(${p.id})" ${(!p.rested && restedCountAvailable(pos) <= 0) ? 'disabled' : ''}> rust</label>
+                </div>`;
+            }).join('')}
+          `;
+          }).join('')}
         </div>
       `;
     }
@@ -607,6 +766,63 @@
       `;
     }
 
+    function trainingDesc(f) {
+      if (f === 'Aanval') return 'Middenveld en aanvallers ontwikkelen sneller bij het volgende seizoen.';
+      if (f === 'Verdediging') return 'Keeper en verdedigers ontwikkelen sneller bij het volgende seizoen.';
+      return 'Minder vermoeidheidsverlies per wedstrijd, dit hele seizoen.';
+    }
+
+    function transferHtml() {
+      return `
+        <div class="card">
+          <h2>Transferbudget: €${state.budget}k</h2>
+          <p class="muted-small">Verdien budget met overwinningen (+€15k), gelijke spelen (+€5k) en een goede eindnotering.</p>
+        </div>
+        <div class="card">
+          <h2>Trainingsfocus</h2>
+          <div class="tactic-options">
+            ${['Aanval', 'Verdediging', 'Conditie'].map(f => `
+              <label>
+                <input type="radio" name="training" value="${f}" ${state.trainingFocus === f ? 'checked' : ''} onchange="setTrainingFocus('${f}')">
+                <span class="t-name">${f}</span>
+                <span class="t-desc">${trainingDesc(f)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <h2>Beschikbare spelers</h2>
+          ${state.transferList.length ? state.transferList.map(c => `
+            <div class="player-row">
+              <span class="pos-badge">${c.pos}</span>
+              <span class="name">${c.name}</span>
+              <span class="rating">${c.rating}</span>
+              <span class="value">€${c.price}k</span>
+              <button class="btn secondary small-btn" onclick="buyPlayer(${c.id})" ${(state.budget < c.price || state.squad.length >= 24) ? 'disabled' : ''}>Koop</button>
+            </div>
+          `).join('') : '<p class="muted-small">Geen spelers meer beschikbaar dit seizoen.</p>'}
+        </div>
+        <div class="card">
+          <h2>Selectie verkopen</h2>
+          ${Object.keys(POS_NEED).map(pos => `
+            ${state.squad.filter(p => p.pos === pos).sort((a,b) => b.rating - a.rating).map(p => {
+              const poolCount = state.squad.filter(q => q.pos === pos).length;
+              const canSell = poolCount > POS_NEED[pos];
+              const value = Math.round(p.rating * 6);
+              return `
+                <div class="player-row">
+                  <span class="pos-badge">${pos}</span>
+                  <span class="name">${p.name}</span>
+                  <span class="rating">${p.rating}</span>
+                  <span class="value">€${value}k</span>
+                  <button class="btn secondary small-btn" onclick="sellPlayer(${p.id})" ${canSell ? '' : 'disabled'}>Verkoop</button>
+                </div>`;
+            }).join('')}
+          `).join('')}
+        </div>
+      `;
+    }
+
     function matchPrepHtml() {
       const ajax = ajaxTeam();
       const fixture = state.schedule[state.matchdayIndex];
@@ -615,6 +831,8 @@
       const oppId = ajaxIsHome ? ajaxFx[1] : ajaxFx[0];
       const opp = state.teams.find(t => t.id === oppId);
       const avgFitness = Math.round(state.squad.reduce((s, p) => s + p.fitness, 0) / state.squad.length);
+      const counter = getCounterMultipliers(pendingTactic, opp.style);
+      const counterActive = counter.attack > 1 || counter.defense > 1;
 
       return `
         <div class="card">
@@ -623,6 +841,9 @@
             <div class="vs">${ajaxIsHome ? 'Ajax' : opp.name} vs ${ajaxIsHome ? opp.name : 'Ajax'}</div>
             <div class="venue">${ajaxIsHome ? 'Thuis' : 'Uit'} · tegenstander sterkte ${opp.strength}</div>
           </div>
+          <p class="scouting">Scouting: ${opp.name} speelt doorgaans <strong>${opp.style}</strong>.
+            ${counterActive ? `<span class="counter-tag">Jouw tactiek countert dit! ✅</span>` : 'Tip: verdedigend counter je een aanvallende tegenstander, aanvallend counter je een verdedigende tegenstander.'}
+          </p>
           <p class="muted-small">Gemiddelde fitheid selectie: ${avgFitness}%</p>
           <h3>Kies je tactiek</h3>
           <div class="tactic-options">
@@ -651,9 +872,11 @@
             ${r.homeGoals} - ${r.awayGoals}
             <span class="team-name">${r.homeName} — ${r.awayName}</span>
           </div>
+          ${r.counterActive ? `<p class="scouting counter-tag" style="text-align:center">Je tactiek countertte de speelstijl van ${r.opp.name}! ✅</p>` : ''}
           <ul class="events">
-            ${r.events.length ? r.events.map(e => `<li class="${e.side === 'ajax' ? 'home' : ''}"><span class="min">${e.minute}'</span>${e.text}</li>`).join('') : '<li>Doelpuntloos gelijkspel.</li>'}
+            ${r.events.length ? r.events.map(e => `<li class="${e.side === 'ajax' ? 'home' : e.side === 'injury' ? 'injury' : ''}"><span class="min">${e.minute}'</span>${e.text}</li>`).join('') : '<li>Doelpuntloos gelijkspel.</li>'}
           </ul>
+          <p class="muted-small" style="text-align:center">Budget: +€${r.budgetGained}k &nbsp;·&nbsp; Vorm: ${formLabel(state.form)}</p>
           <div class="actions">
             <button class="btn" onclick="goTo('dashboard')">Verder →</button>
             <button class="btn secondary" onclick="goTo('table')">Bekijk stand</button>
@@ -666,6 +889,7 @@
       const table = sortedTable();
       const position = table.findIndex(t => t.isAjax) + 1;
       const achieved = position <= 3;
+      const bonus = state.history[state.history.length - 1]?.bonus ?? 0;
       return `
         <div class="banner ${achieved ? 'success' : 'fail'}">
           ${achieved
@@ -674,6 +898,7 @@
         </div>
         <div class="card">
           <h2>Eindstand seizoen ${state.season}</h2>
+          <p class="muted-small">Prijzengeld voor deze eindnotering: +€${bonus}k. Nieuw budget: €${state.budget}k.</p>
           <div style="overflow-x:auto">
           <table class="league">
             <thead><tr><th>#</th><th style="text-align:left">Club</th><th>P</th><th>D</th><th>Pt</th></tr></thead>
@@ -687,6 +912,7 @@
         </div>
         <div class="actions">
           <button class="btn" onclick="startNewSeason()">Start seizoen ${state.season + 1} →</button>
+          <button class="btn secondary" onclick="goTo('transfer')">Naar transfermarkt</button>
           <button class="btn secondary" onclick="resetGame()">Nieuw spel</button>
         </div>
       `;
