@@ -174,6 +174,8 @@
     let currentView = 'dashboard';
     let pendingTactic = 'Gebalanceerd';
     let lastMatchResult = null;
+    let lastClMatchResult = null;
+    let lastClFinalSummary = null;
 
     const TACTICS = {
       Aanvallend:   { attack: 1.15, defense: 0.85, desc: 'Meer druk voorin, kwetsbaarder achterin.' },
@@ -188,6 +190,18 @@
     }
 
     function randomStyle() { return STYLES[randInt(0, STYLES.length - 1)]; }
+
+    const CL_CLUBS = [
+      { id: 'rma', name: 'Real Madrid', strength: 94 },
+      { id: 'mci', name: 'Manchester City', strength: 92 },
+      { id: 'bay', name: 'Bayern München', strength: 91 },
+      { id: 'psg', name: 'Paris Saint-Germain', strength: 89 },
+      { id: 'fcb', name: 'FC Barcelona', strength: 88 },
+      { id: 'liv', name: 'Liverpool', strength: 88 },
+      { id: 'int', name: 'Inter Milaan', strength: 85 },
+      { id: 'bvb', name: 'Borussia Dortmund', strength: 84 },
+    ];
+    const CL_BONUS = { group: 150, semifinal: 400, finalist: 700, winner: 1200 };
 
     function baseTeams() {
       return [
@@ -291,6 +305,9 @@
         trainingFocus: 'Conditie',
         nextPlayerId: 19,
         transferList: [],
+        globalMatchCount: 0,
+        clPending: false,
+        clRun: null,
       };
       obj.transferList = generateTransferCandidates(obj);
       return obj;
@@ -331,7 +348,7 @@
     }
 
     function effective(p) { return p.rating * (0.7 + 0.3 * p.fitness / 100); }
-    function isAvailable(p) { return p.injuredUntil <= state.matchdayIndex; }
+    function isAvailable(p) { return p.injuredUntil <= state.globalMatchCount; }
 
     function ajaxTeam() { return state.teams.find(t => t.isAjax); }
 
@@ -457,7 +474,7 @@
           const injuryChance = preFitness < 60 ? clamp((60 - preFitness) / 250, 0, 0.3) : 0;
           if (Math.random() < injuryChance) {
             const duration = randInt(1, 3);
-            p.injuredUntil = mdIdx + 1 + duration;
+            p.injuredUntil = state.globalMatchCount + 1 + duration;
             events.push({ minute: randInt(1, 90), side: 'injury', text: `🤕 ${p.name} raakt geblesseerd (${duration} wedstrijden uit)` });
           }
         } else {
@@ -465,6 +482,7 @@
         }
       });
       events.sort((a, b) => a.minute - b.minute);
+      state.globalMatchCount++;
 
       let budgetGained = 0;
       if (ajaxGoals > oppGoals) {
@@ -519,6 +537,7 @@
       if (achieved) state.goalAchieved = true;
       const bonus = position === 1 ? 800 : position === 2 ? 600 : position === 3 ? 500 : position <= 6 ? 350 : position <= 12 ? 150 : 50;
       state.budget += bonus;
+      state.clPending = achieved;
       state.history.push({ season: state.season, position, achieved, bonus });
     }
 
@@ -527,6 +546,8 @@
       state.matchdayIndex = 0;
       state.form = 0;
       state.recentForm = [];
+      state.clPending = false;
+      state.clRun = null;
       state.teams = state.teams.map(t => {
         const drifted = clamp(t.strength + randInt(-2, 3), 50, 92);
         return freshTableRow({ id: t.id, name: t.name, strength: drifted, isAjax: t.isAjax, style: randomStyle() });
@@ -583,6 +604,301 @@
       render();
     }
 
+    // ---------- Champions League ----------
+    function generateGroupSchedule(teamIds) {
+      // teamIds[0] must be Ajax's id; the circle method keeps it fixed, so it
+      // only ever collides with the BYE slot, never sits out any real match unfairly.
+      let ids = teamIds.slice();
+      if (ids.length % 2 !== 0) ids.push('BYE');
+      const n = ids.length;
+      let arr = ids.slice();
+      const rounds = [];
+      for (let r = 0; r < n - 1; r++) {
+        const round = [];
+        for (let i = 0; i < n / 2; i++) {
+          const home = arr[i], away = arr[n - 1 - i];
+          if (home !== 'BYE' && away !== 'BYE') round.push(r % 2 === 0 ? [home, away] : [away, home]);
+        }
+        rounds.push(round);
+        const fixed = arr[0];
+        const rest = arr.slice(1);
+        rest.unshift(rest.pop());
+        arr = [fixed, ...rest];
+      }
+      return rounds;
+    }
+
+    function simulatePenalties(myPower, oppPower) {
+      const myProb = clamp(0.75 + (myPower - oppPower) / 400, 0.6, 0.85);
+      const oppProb = clamp(0.75 - (myPower - oppPower) / 400, 0.6, 0.85);
+      let myScore = 0, oppScore = 0;
+      for (let i = 0; i < 5; i++) {
+        if (Math.random() < myProb) myScore++;
+        if (Math.random() < oppProb) oppScore++;
+      }
+      let safety = 0;
+      while (myScore === oppScore && safety < 10) {
+        if (Math.random() < myProb) myScore++;
+        if (Math.random() < oppProb) oppScore++;
+        safety++;
+      }
+      if (myScore === oppScore) myScore++;
+      return { win: myScore > oppScore, myScore, oppScore };
+    }
+
+    function resolveAIKnockout(teamA, teamB) {
+      const [ga, gb] = simulateGenericMatch(teamA, teamB);
+      if (ga !== gb) return ga > gb ? teamA : teamB;
+      const pAWin = clamp(0.5 + (teamA.strength - teamB.strength) / 200, 0.3, 0.7);
+      return Math.random() < pAWin ? teamA : teamB;
+    }
+
+    function clSortedTable() {
+      return state.clRun.teams.slice().sort((a, b) =>
+        (b.pts - a.pts) || ((b.gf - b.ga) - (a.gf - a.ga)) || (b.gf - a.gf)
+      );
+    }
+
+    function clApplyResult(homeId, awayId, hg, ag) {
+      const home = state.clRun.teams.find(t => t.id === homeId);
+      const away = state.clRun.teams.find(t => t.id === awayId);
+      home.played++; away.played++;
+      home.gf += hg; home.ga += ag;
+      away.gf += ag; away.ga += hg;
+      if (hg > ag) { home.won++; away.lost++; home.pts += 3; }
+      else if (hg < ag) { away.won++; home.lost++; away.pts += 3; }
+      else { home.draw++; away.draw++; home.pts++; away.pts++; }
+    }
+
+    function startChampionsLeague() {
+      const opponents = CL_CLUBS.map(c => freshTableRow({ ...c, isAjax: false, style: randomStyle() }));
+      const ajaxEntry = freshTableRow({ id: 'ajx', name: 'Ajax', strength: null, isAjax: true, style: 'Gebalanceerd' });
+      const teams = [ajaxEntry, ...opponents];
+      state.clRun = {
+        stage: 'group',
+        teams,
+        schedule: generateGroupSchedule(teams.map(t => t.id)),
+        roundIndex: 0,
+        bracket: null,
+      };
+      currentView = 'cl-dashboard';
+      clAdvanceToNextAjaxRound();
+      save();
+      render();
+    }
+
+    function clFindAjaxFixture(round) {
+      return round.find(([h, a]) => h === 'ajx' || a === 'ajx') || null;
+    }
+
+    function clAdvanceToNextAjaxRound() {
+      const cl = state.clRun;
+      if (!cl || cl.stage !== 'group') return;
+      while (cl.roundIndex < cl.schedule.length) {
+        const round = cl.schedule[cl.roundIndex];
+        if (clFindAjaxFixture(round)) return;
+        round.forEach(([h, a]) => {
+          const th = cl.teams.find(t => t.id === h), ta = cl.teams.find(t => t.id === a);
+          const [hg, ag] = simulateGenericMatch(th, ta);
+          clApplyResult(h, a, hg, ag);
+        });
+        cl.roundIndex++;
+      }
+      clFinalizeGroupStage();
+    }
+
+    function clFinalizeGroupStage() {
+      const table = clSortedTable();
+      const top4 = table.slice(0, 4);
+      const ajaxRank = top4.findIndex(t => t.isAjax);
+      if (ajaxRank === -1) {
+        clFinishRun('Groepsfase', CL_BONUS.group);
+        return;
+      }
+      const seedPairs = [[top4[0].id, top4[3].id], [top4[1].id, top4[2].id]];
+      const ajaxPair = seedPairs.find(p => p.includes('ajx'));
+      const otherPair = seedPairs.find(p => p !== ajaxPair);
+      const ajaxOppId = ajaxPair[0] === 'ajx' ? ajaxPair[1] : ajaxPair[0];
+      const oa = state.clRun.teams.find(t => t.id === otherPair[0]);
+      const ob = state.clRun.teams.find(t => t.id === otherPair[1]);
+      const otherWinner = resolveAIKnockout(oa, ob);
+      state.clRun.stage = 'semifinal';
+      state.clRun.bracket = { ajaxOppId, otherFinalistId: otherWinner.id, ajaxSeed: ajaxRank + 1 };
+      currentView = 'cl-dashboard';
+    }
+
+    function clFinishRun(resultLabel, bonus) {
+      state.budget += bonus;
+      const last = state.history[state.history.length - 1];
+      if (last) { last.clResult = resultLabel; last.clBonus = bonus; }
+      state.clRun = null;
+      state.clPending = false;
+      lastClFinalSummary = { resultLabel, bonus };
+      currentView = 'cl-final';
+      save();
+      render();
+    }
+
+    function clCurrentFixture() {
+      const cl = state.clRun;
+      if (!cl) return null;
+      if (cl.stage === 'group') {
+        const round = cl.schedule[cl.roundIndex];
+        const fx = round ? clFindAjaxFixture(round) : null;
+        if (!fx) return null;
+        const isHome = fx[0] === 'ajx';
+        const oppId = isHome ? fx[1] : fx[0];
+        const ajaxEntry = cl.teams.find(t => t.isAjax);
+        return { oppId, isHome, stage: 'group', label: `Groepswedstrijd ${ajaxEntry.played + 1} van 8` };
+      }
+      if (cl.stage === 'semifinal') {
+        return { oppId: cl.bracket.ajaxOppId, isHome: cl.bracket.ajaxSeed <= 2, stage: 'semifinal', label: 'Halve finale' };
+      }
+      if (cl.stage === 'final') {
+        return { oppId: cl.bracket.finalOpponentId, isHome: true, stage: 'final', label: 'Finale' };
+      }
+      return null;
+    }
+
+    function clPlayMatch(oppId, ajaxIsHome, stage) {
+      const opp = state.clRun.teams.find(t => t.id === oppId);
+      const lineup = selectLineup(state.squad);
+      const tactic = TACTICS[pendingTactic];
+      const counter = getCounterMultipliers(pendingTactic, opp.style);
+      const atkPool = lineup.filter(p => p.pos === 'MID' || p.pos === 'ATT');
+      const defPool = lineup.filter(p => p.pos === 'GK' || p.pos === 'DEF');
+      const formMult = 1 + state.form * 0.015;
+      const attackPower = atkPool.length
+        ? (atkPool.reduce((s, p) => s + effective(p), 0) / atkPool.length) * tactic.attack * counter.attack * formMult
+        : 30;
+      const defensePower = defPool.length
+        ? (defPool.reduce((s, p) => s + effective(p), 0) / defPool.length) * tactic.defense * counter.defense * formMult
+        : 30;
+
+      const oppVar = opp.strength + randInt(-4, 4);
+      const home = stage === 'final' ? 0 : (ajaxIsHome ? HOME_ADV : -HOME_ADV * 0.5);
+      const expAjax = clamp(1.3 + (attackPower - oppVar) / SKILL_DIVISOR + home, 0.15, 5.5);
+      const expOpp = clamp(1.3 + (oppVar - defensePower) / SKILL_DIVISOR - home, 0.15, 5.5);
+      let ajaxGoals = poisson(expAjax);
+      let oppGoals = poisson(expOpp);
+
+      const scorerPool = atkPool.length ? atkPool : lineup;
+      const events = [];
+      const addGoals = (n, side, range) => {
+        for (let i = 0; i < n; i++) {
+          if (side === 'ajax') {
+            const scorer = weightedPick(scorerPool);
+            events.push({ minute: randInt(range[0], range[1]), side: 'ajax', text: `⚽ ${scorer.name} scoort!` });
+          } else {
+            events.push({ minute: randInt(range[0], range[1]), side: 'opp', text: `⚽ Doelpunt voor ${opp.name}` });
+          }
+        }
+      };
+      addGoals(ajaxGoals, 'ajax', [1, 90]);
+      addGoals(oppGoals, 'opp', [1, 90]);
+
+      const isKnockout = stage === 'semifinal' || stage === 'final';
+      let wentToExtraTime = false, wentToPenalties = false, penaltyResult = null;
+      if (isKnockout && ajaxGoals === oppGoals) {
+        wentToExtraTime = true;
+        const etAjax = poisson(expAjax / 3);
+        const etOpp = poisson(expOpp / 3);
+        addGoals(etAjax, 'ajax', [91, 120]);
+        addGoals(etOpp, 'opp', [91, 120]);
+        ajaxGoals += etAjax; oppGoals += etOpp;
+        if (ajaxGoals === oppGoals) {
+          wentToPenalties = true;
+          penaltyResult = simulatePenalties(attackPower + defensePower, opp.strength * 2);
+        }
+      }
+      events.sort((a, b) => a.minute - b.minute);
+
+      state.squad.forEach(p => {
+        const played = lineup.includes(p);
+        if (played) {
+          const preFitness = p.fitness;
+          const conditionBonus = state.trainingFocus === 'Conditie' ? 3 : 0;
+          p.fitness = Math.max(30, p.fitness - randInt(8, 15) + conditionBonus);
+          const injuryChance = preFitness < 60 ? clamp((60 - preFitness) / 250, 0, 0.3) : 0;
+          if (Math.random() < injuryChance) {
+            const duration = randInt(1, 3);
+            p.injuredUntil = state.globalMatchCount + 1 + duration;
+            events.push({ minute: randInt(1, 90), side: 'injury', text: `🤕 ${p.name} raakt geblesseerd (${duration} wedstrijden uit)` });
+          }
+        } else {
+          p.fitness = Math.min(100, p.fitness + randInt(10, 18));
+        }
+      });
+      events.sort((a, b) => a.minute - b.minute);
+      state.globalMatchCount++;
+
+      const ajaxWonMatch = wentToPenalties ? penaltyResult.win : ajaxGoals > oppGoals;
+      const isDrawNonKnockout = !isKnockout && ajaxGoals === oppGoals;
+      if (ajaxWonMatch && !isDrawNonKnockout) {
+        state.form = clamp(state.form + 1, -5, 5); state.recentForm.push('W');
+      } else if (isDrawNonKnockout) {
+        state.form = clamp(Math.trunc(state.form / 2), -5, 5); state.recentForm.push('D');
+      } else {
+        state.form = clamp(state.form - 1, -5, 5); state.recentForm.push('L');
+      }
+      if (state.recentForm.length > 5) state.recentForm.shift();
+
+      lastClMatchResult = {
+        opp, stage, ajaxIsHome, ajaxGoals, oppGoals, events, ajaxWonMatch,
+        counterActive: counter.attack > 1 || counter.defense > 1,
+        wentToExtraTime, wentToPenalties, penaltyResult,
+        homeName: ajaxIsHome ? 'Ajax' : opp.name,
+        awayName: ajaxIsHome ? opp.name : 'Ajax',
+        homeGoals: ajaxIsHome ? ajaxGoals : oppGoals,
+        awayGoals: ajaxIsHome ? oppGoals : ajaxGoals,
+      };
+
+      if (stage === 'group') {
+        clApplyResult(
+          ajaxIsHome ? 'ajx' : oppId,
+          ajaxIsHome ? oppId : 'ajx',
+          ajaxIsHome ? ajaxGoals : oppGoals,
+          ajaxIsHome ? oppGoals : ajaxGoals
+        );
+        const round = state.clRun.schedule[state.clRun.roundIndex];
+        round.forEach(([h, a]) => {
+          if (h === 'ajx' || a === 'ajx') return;
+          const th = state.clRun.teams.find(t => t.id === h), ta = state.clRun.teams.find(t => t.id === a);
+          const [hg, ag] = simulateGenericMatch(th, ta);
+          clApplyResult(h, a, hg, ag);
+        });
+        state.clRun.roundIndex++;
+      }
+
+      currentView = 'cl-matchresult';
+      save();
+      render();
+    }
+
+    function clContinueAfterMatch() {
+      const r = lastClMatchResult;
+      if (!r) { goTo('cl-dashboard'); return; }
+      if (r.stage === 'group') {
+        clAdvanceToNextAjaxRound();
+        if (state.clRun) currentView = 'cl-dashboard';
+      } else if (r.stage === 'semifinal') {
+        if (r.ajaxWonMatch) {
+          state.clRun.stage = 'final';
+          state.clRun.bracket.finalOpponentId = state.clRun.bracket.otherFinalistId;
+          currentView = 'cl-dashboard';
+        } else {
+          clFinishRun('Halve finale', CL_BONUS.semifinal);
+          return;
+        }
+      } else if (r.stage === 'final') {
+        if (r.ajaxWonMatch) clFinishRun('Kampioen! 🏆', CL_BONUS.winner);
+        else clFinishRun('Finalist', CL_BONUS.finalist);
+        return;
+      }
+      save();
+      render();
+    }
+
     // ---------- rendering ----------
     function render() {
       const app = document.getElementById('app');
@@ -596,9 +912,12 @@
         ['table', 'Stand'],
         ['transfer', 'Transfermarkt'],
       ];
-      return `<div class="tabs">${tabs.map(([id, label]) =>
-        `<button class="${currentView === id ? 'active' : ''}" onclick="goTo('${id}')">${label}</button>`
-      ).join('')}</div>`;
+      if (state.clRun) tabs.push(['cl-dashboard', 'Champions League']);
+      const clViews = ['cl-dashboard', 'cl-match', 'cl-matchresult'];
+      return `<div class="tabs">${tabs.map(([id, label]) => {
+        const active = currentView === id || (id === 'cl-dashboard' && clViews.includes(currentView));
+        return `<button class="${active ? 'active' : ''}" onclick="goTo('${id}')">${label}</button>`;
+      }).join('')}</div>`;
     }
 
     function goTo(view) { currentView = view; render(); }
@@ -610,6 +929,10 @@
       if (currentView === 'match') return matchPrepHtml();
       if (currentView === 'matchresult') return matchResultHtml();
       if (currentView === 'seasonend') return seasonEndHtml();
+      if (currentView === 'cl-dashboard') return clDashboardHtml();
+      if (currentView === 'cl-match') return clMatchPrepHtml();
+      if (currentView === 'cl-matchresult') return clMatchResultHtml();
+      if (currentView === 'cl-final') return clFinalHtml();
       return dashboardHtml();
     }
 
@@ -683,7 +1006,7 @@
           <h2>Seizoensgeschiedenis</h2>
           <ul class="history-list">
             ${state.history.slice().reverse().map(h =>
-              `<li><span>Seizoen ${h.season}</span><span>${h.position}e plaats ${h.achieved ? '🏆' : ''} (+€${h.bonus}k)</span></li>`
+              `<li><span>Seizoen ${h.season}</span><span>${h.position}e plaats ${h.achieved ? '🏆' : ''} (+€${h.bonus}k)${h.clResult ? ` · CL: ${h.clResult} (+€${h.clBonus}k)` : ''}</span></li>`
             ).join('')}
           </ul>
         </div>
@@ -704,7 +1027,7 @@
             ${state.squad.filter(p => p.pos === pos).sort((a,b) => b.rating - a.rating).map(p => {
               const injured = !isAvailable(p);
               if (injured) {
-                const remaining = p.injuredUntil - state.matchdayIndex;
+                const remaining = p.injuredUntil - state.globalMatchCount;
                 return `
                   <div class="player-row injured">
                     <span class="pos-badge">${pos}</span>
@@ -889,13 +1212,15 @@
       const table = sortedTable();
       const position = table.findIndex(t => t.isAjax) + 1;
       const achieved = position <= 3;
-      const bonus = state.history[state.history.length - 1]?.bonus ?? 0;
+      const lastEntry = state.history[state.history.length - 1];
+      const bonus = lastEntry?.bonus ?? 0;
       return `
         <div class="banner ${achieved ? 'success' : 'fail'}">
           ${achieved
             ? `🏆 Gefeliciteerd! Ajax eindigde ${position}e en is geplaatst voor de Champions League!`
             : `Ajax eindigde ${position}e — net niet genoeg voor Champions League-voetbal. Volgend seizoen beter!`}
         </div>
+        ${lastEntry?.clResult ? `<div class="banner success">Champions League: ${lastEntry.clResult} (+€${lastEntry.clBonus}k)</div>` : ''}
         <div class="card">
           <h2>Eindstand seizoen ${state.season}</h2>
           <p class="muted-small">Prijzengeld voor deze eindnotering: +€${bonus}k. Nieuw budget: €${state.budget}k.</p>
@@ -911,9 +1236,129 @@
           </div>
         </div>
         <div class="actions">
-          <button class="btn" onclick="startNewSeason()">Start seizoen ${state.season + 1} →</button>
+          ${state.clPending ? `<button class="btn" onclick="startChampionsLeague()">Speel Champions League →</button>` : ''}
+          <button class="btn ${state.clPending ? 'secondary' : ''}" onclick="startNewSeason()">Start seizoen ${state.season + 1} →</button>
           <button class="btn secondary" onclick="goTo('transfer')">Naar transfermarkt</button>
           <button class="btn secondary" onclick="resetGame()">Nieuw spel</button>
+        </div>
+      `;
+    }
+
+    function clDashboardHtml() {
+      const cl = state.clRun;
+      if (!cl) return `<div class="card"><p class="muted-small">Geen actief Champions League-toernooi.</p></div>`;
+      let statusHtml = '';
+      if (cl.stage === 'group') {
+        const table = clSortedTable();
+        statusHtml = `
+          <div class="card">
+            <h2>Champions League — Groepsfase</h2>
+            <div style="overflow-x:auto">
+            <table class="league">
+              <thead><tr><th>#</th><th style="text-align:left">Club</th><th>P</th><th>D</th><th>Pt</th></tr></thead>
+              <tbody>
+                ${table.map((t, i) => `<tr class="${t.isAjax ? 'ajax-row' : ''} ${i < 4 ? 'zone-cl' : ''}">
+                  <td class="pos">${i + 1}</td><td class="club">${t.name}</td><td>${t.played}</td><td>${t.gf - t.ga}</td><td><strong>${t.pts}</strong></td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+            </div>
+            <p class="muted-small">Top 4 plaatst zich voor de knock-outfase (halve finale, finale).</p>
+          </div>`;
+      } else {
+        const oppId = cl.stage === 'semifinal' ? cl.bracket.ajaxOppId : cl.bracket.finalOpponentId;
+        const opp = cl.teams.find(t => t.id === oppId);
+        statusHtml = `
+          <div class="card">
+            <h2>Champions League — ${cl.stage === 'semifinal' ? 'Halve finale' : 'Finale'}</h2>
+            <p class="muted-small">Tegenstander: ${opp.name} (sterkte ${opp.strength}).${cl.stage === 'final' ? ' Gespeeld op neutraal terrein.' : ''}</p>
+          </div>`;
+      }
+      return `
+        ${statusHtml}
+        <div class="actions">
+          <button class="btn" onclick="goTo('cl-match')">Wedstrijd voorbereiden →</button>
+        </div>
+      `;
+    }
+
+    function clMatchPrepHtml() {
+      const fx = clCurrentFixture();
+      if (!fx) return clDashboardHtml();
+      const opp = state.clRun.teams.find(t => t.id === fx.oppId);
+      const avgFitness = Math.round(state.squad.reduce((s, p) => s + p.fitness, 0) / state.squad.length);
+      const counter = getCounterMultipliers(pendingTactic, opp.style);
+      const counterActive = counter.attack > 1 || counter.defense > 1;
+      return `
+        <div class="card">
+          <h2>${fx.label}</h2>
+          <div class="fixture">
+            <div class="vs">${fx.isHome ? 'Ajax' : opp.name} vs ${fx.isHome ? opp.name : 'Ajax'}</div>
+            <div class="venue">${fx.stage === 'final' ? 'Neutraal terrein' : (fx.isHome ? 'Thuis' : 'Uit')} · tegenstander sterkte ${opp.strength}</div>
+          </div>
+          <p class="scouting">Scouting: ${opp.name} speelt doorgaans <strong>${opp.style}</strong>.
+            ${counterActive ? `<span class="counter-tag">Jouw tactiek countert dit! ✅</span>` : 'Tip: verdedigend counter je een aanvallende tegenstander, aanvallend counter je een verdedigende tegenstander.'}
+          </p>
+          <p class="muted-small">Gemiddelde fitheid selectie: ${avgFitness}%${fx.stage !== 'group' ? ' · Bij gelijkspel volgt verlenging en eventueel strafschoppen.' : ''}</p>
+          <h3>Kies je tactiek</h3>
+          <div class="tactic-options">
+            ${Object.keys(TACTICS).map(name => `
+              <label>
+                <input type="radio" name="tactic" value="${name}" ${pendingTactic === name ? 'checked' : ''} onchange="pendingTactic='${name}'; render()">
+                <span class="t-name">${name}</span>
+                <span class="t-desc">${TACTICS[name].desc}</span>
+              </label>
+            `).join('')}
+          </div>
+          <div class="actions">
+            <button class="btn" onclick="clPlayMatch('${fx.oppId}', ${fx.isHome}, '${fx.stage}')">Speel wedstrijd ▶</button>
+            <button class="btn secondary" onclick="goTo('squad')">Selectie bekijken</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function clMatchResultHtml() {
+      const r = lastClMatchResult;
+      if (!r) return clDashboardHtml();
+      let extraLine = '';
+      if (r.wentToPenalties) {
+        extraLine = `<p class="muted-small" style="text-align:center">Na verlenging gelijk — strafschoppen: ${r.penaltyResult.myScore}-${r.penaltyResult.oppScore} ${r.ajaxWonMatch ? 'in het voordeel van Ajax! ✅' : `in het voordeel van ${r.opp.name}.`}</p>`;
+      } else if (r.wentToExtraTime) {
+        extraLine = `<p class="muted-small" style="text-align:center">Beslist na verlenging.</p>`;
+      }
+      return `
+        <div class="card">
+          <h2>${r.stage === 'group' ? 'Groepswedstrijd' : r.stage === 'semifinal' ? 'Halve finale' : 'Finale'}</h2>
+          <div class="score">
+            ${r.homeGoals} - ${r.awayGoals}
+            <span class="team-name">${r.homeName} — ${r.awayName}</span>
+          </div>
+          ${extraLine}
+          ${r.counterActive ? `<p class="scouting counter-tag" style="text-align:center">Je tactiek countertte de speelstijl van ${r.opp.name}! ✅</p>` : ''}
+          <ul class="events">
+            ${r.events.length ? r.events.map(e => `<li class="${e.side === 'ajax' ? 'home' : e.side === 'injury' ? 'injury' : ''}"><span class="min">${e.minute}'</span>${e.text}</li>`).join('') : '<li>Doelpuntloos gelijkspel.</li>'}
+          </ul>
+          <div class="actions">
+            <button class="btn" onclick="clContinueAfterMatch()">Verder →</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function clFinalHtml() {
+      const s = lastClFinalSummary;
+      if (!s) return dashboardHtml();
+      const isWinner = s.resultLabel.includes('Kampioen');
+      return `
+        <div class="banner success">
+          ${isWinner ? '🏆🏆 Ajax is Champions League-winnaar!' : `Champions League-avontuur geëindigd: ${s.resultLabel}.`}
+        </div>
+        <div class="card">
+          <p class="muted-small">Bonus: +€${s.bonus}k. Nieuw budget: €${state.budget}k.</p>
+          <div class="actions">
+            <button class="btn" onclick="goTo('seasonend')">Terug naar seizoensafsluiting</button>
+          </div>
         </div>
       `;
     }
