@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NL → Kroatisch</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    :root { --accent: #dc2626; }
+
+    .search-row {
+      margin-bottom: 1.5rem;
+    }
+    .search-row input {
+      width: 100%;
+      padding: .75rem 1rem;
+      border-radius: .6rem;
+      border: 1.5px solid #e2e8f0;
+      font-size: 1rem;
+    }
+    .search-row input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .category {
+      margin-bottom: 2rem;
+    }
+    .category h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: .75rem;
+    }
+
+    .word-row {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      background: var(--white);
+      border: 1.5px solid #e2e8f0;
+      border-radius: .6rem;
+      padding: .7rem 1rem;
+      margin-bottom: .5rem;
+    }
+    .word-row .nl {
+      flex: 1;
+      font-weight: 600;
+    }
+    .word-row .hr {
+      flex: 1;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .speak-btn {
+      border: none;
+      background: #fef2f2;
+      color: var(--accent);
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .15s, transform .1s;
+    }
+    .speak-btn:hover { background: #fee2e2; }
+    .speak-btn:active { transform: scale(.92); }
+    .speak-btn.playing { background: var(--accent); color: #fff; }
+
+    .no-tts {
+      font-size: .85rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="logo">NL → Kroatisch</span>
+      <a href="../index.html" class="back-link">← Terug</a>
+    </nav>
+  </header>
+
+  <main class="experience">
+    <h1>🇭🇷 Basiswoorden voor op vakantie</h1>
+
+    <p class="no-tts" id="no-tts">Uitspraak wordt niet ondersteund in deze browser.</p>
+
+    <div class="search-row">
+      <input type="text" id="search" placeholder="Zoek een woord... (bv. bedankt, water, links)" />
+    </div>
+
+    <div id="categories"></div>
+  </main>
+
+  <script>
+    const data = [
+      {
+        cat: 'Begroetingen & beleefdheid',
+        words: [
+          ['Hallo / Hoi', 'Bok'],
+          ['Goedemorgen', 'Dobro jutro'],
+          ['Goedendag', 'Dobar dan'],
+          ['Goedenavond', 'Dobra večer'],
+          ['Goedenacht', 'Laku noć'],
+          ['Tot ziens', 'Doviđenja'],
+          ['Alsjeblieft', 'Molim'],
+          ['Dank je wel', 'Hvala'],
+          ['Graag gedaan', 'Nema na čemu'],
+          ['Ja', 'Da'],
+          ['Nee', 'Ne'],
+          ['Sorry / Pardon', 'Oprostite'],
+          ['Hoe gaat het?', 'Kako si?'],
+          ['Goed, dank je', 'Dobro, hvala'],
+          ['Spreekt u Engels?', 'Govorite li engleski?'],
+          ['Ik begrijp het niet', 'Ne razumijem'],
+        ],
+      },
+      {
+        cat: 'Eten & drinken',
+        words: [
+          ['Water', 'Voda'],
+          ['Bier', 'Pivo'],
+          ['Wijn', 'Vino'],
+          ['Koffie', 'Kava'],
+          ['Brood', 'Kruh'],
+          ['Lekker!', 'Ukusno!'],
+          ['Proost!', 'Živjeli!'],
+          ['De rekening, alstublieft', 'Račun, molim'],
+          ['Hoeveel kost dit?', 'Koliko ovo košta?'],
+        ],
+      },
+      {
+        cat: 'Onderweg',
+        words: [
+          ['Waar is...?', 'Gdje je...?'],
+          ['Waar is het toilet?', 'Gdje je WC?'],
+          ['Links', 'Lijevo'],
+          ['Rechts', 'Desno'],
+          ['Rechtdoor', 'Ravno'],
+          ['Strand', 'Plaža'],
+          ['Zee', 'More'],
+          ['Zon', 'Sunce'],
+          ['Warm', 'Toplo'],
+          ['Koud', 'Hladno'],
+        ],
+      },
+      {
+        cat: 'Noodgevallen',
+        words: [
+          ['Help!', 'Upomoć!'],
+          ['Ziekenhuis', 'Bolnica'],
+          ['Apotheek', 'Ljekarna'],
+          ['Politie', 'Policija'],
+          ['Vliegveld', 'Zračna luka'],
+          ['Station', 'Kolodvor'],
+          ['Taxi', 'Taksi'],
+        ],
+      },
+      {
+        cat: 'Getallen',
+        words: [
+          ['Een', 'Jedan'],
+          ['Twee', 'Dva'],
+          ['Drie', 'Tri'],
+          ['Vier', 'Četiri'],
+          ['Vijf', 'Pet'],
+          ['Zes', 'Šest'],
+          ['Zeven', 'Sedam'],
+          ['Acht', 'Osam'],
+          ['Negen', 'Devet'],
+          ['Tien', 'Deset'],
+        ],
+      },
+      {
+        cat: 'Dagen van de week',
+        words: [
+          ['Maandag', 'Ponedjeljak'],
+          ['Dinsdag', 'Utorak'],
+          ['Woensdag', 'Srijeda'],
+          ['Donderdag', 'Četvrtak'],
+          ['Vrijdag', 'Petak'],
+          ['Zaterdag', 'Subota'],
+          ['Zondag', 'Nedjelja'],
+        ],
+      },
+      {
+        cat: 'Supermarkt: groenten',
+        words: [
+          ['Tomaat', 'Rajčica'],
+          ['Komkommer', 'Krastavac'],
+          ['Ui', 'Luk'],
+          ['Knoflook', 'Češnjak'],
+          ['Aardappel', 'Krumpir'],
+          ['Paprika', 'Paprika'],
+          ['Wortel', 'Mrkva'],
+          ['Sla', 'Salata'],
+          ['Courgette', 'Tikvica'],
+          ['Aubergine', 'Patlidžan'],
+        ],
+      },
+      {
+        cat: 'Supermarkt: fruit',
+        words: [
+          ['Appel', 'Jabuka'],
+          ['Banaan', 'Banana'],
+          ['Sinaasappel', 'Naranča'],
+          ['Druiven', 'Grožđe'],
+          ['Watermeloen', 'Lubenica'],
+          ['Meloen', 'Dinja'],
+          ['Perzik', 'Breskva'],
+          ['Citroen', 'Limun'],
+          ['Aardbei', 'Jagoda'],
+          ['Kers', 'Trešnja'],
+        ],
+      },
+      {
+        cat: 'Supermarkt: vlees',
+        words: [
+          ['Kip', 'Piletina'],
+          ['Rundvlees', 'Govedina'],
+          ['Varkensvlees', 'Svinjetina'],
+          ['Lamsvlees', 'Janjetina'],
+          ['Gehakt', 'Mljeveno meso'],
+          ['Worst', 'Kobasica'],
+          ['Ham', 'Šunka'],
+          ['Vis', 'Riba'],
+        ],
+      },
+      {
+        cat: 'Supermarkt: zuivel',
+        words: [
+          ['Melk', 'Mlijeko'],
+          ['Kaas', 'Sir'],
+          ['Yoghurt', 'Jogurt'],
+          ['Boter', 'Maslac'],
+          ['Room', 'Vrhnje'],
+          ['Eieren', 'Jaja'],
+        ],
+      },
+    ];
+
+    const hasTTS = 'speechSynthesis' in window;
+    if (!hasTTS) document.getElementById('no-tts').style.display = 'block';
+
+    function speak(text, btn) {
+      if (!hasTTS) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'hr-HR';
+      utter.rate = 0.9;
+      btn.classList.add('playing');
+      utter.onend = () => btn.classList.remove('playing');
+      utter.onerror = () => btn.classList.remove('playing');
+      window.speechSynthesis.speak(utter);
+    }
+
+    const container = document.getElementById('categories');
+
+    function render(filter) {
+      container.innerHTML = '';
+      const f = filter.trim().toLowerCase();
+
+      data.forEach(group => {
+        const rows = group.words.filter(([nl, hr]) =>
+          !f || nl.toLowerCase().includes(f) || hr.toLowerCase().includes(f)
+        );
+        if (!rows.length) return;
+
+        const catEl = document.createElement('div');
+        catEl.className = 'category';
+        const h3 = document.createElement('h3');
+        h3.textContent = group.cat;
+        catEl.appendChild(h3);
+
+        rows.forEach(([nl, hr]) => {
+          const row = document.createElement('div');
+          row.className = 'word-row';
+
+          const nlEl = document.createElement('span');
+          nlEl.className = 'nl';
+          nlEl.textContent = nl;
+
+          const hrEl = document.createElement('span');
+          hrEl.className = 'hr';
+          hrEl.textContent = hr;
+
+          const btn = document.createElement('button');
+          btn.className = 'speak-btn';
+          btn.textContent = '🔊';
+          btn.title = 'Uitspreken';
+          btn.disabled = !hasTTS;
+          btn.addEventListener('click', () => speak(hr, btn));
+
+          row.appendChild(nlEl);
+          row.appendChild(hrEl);
+          row.appendChild(btn);
+          catEl.appendChild(row);
+        });
+
+        container.appendChild(catEl);
+      });
+    }
+
+    document.getElementById('search').addEventListener('input', e => render(e.target.value));
+    render('');
+  </script>
+</body>
+</html>
