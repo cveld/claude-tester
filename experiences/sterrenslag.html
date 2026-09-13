@@ -794,8 +794,7 @@
             }
 
             let guaranteed = 0;
-            const protrudingCells = [];
-            let safe = true;
+            const protruding = []; // { reg, cellsInside, regRemaining }
             for (const [reg, cellsInside] of byRegion) {
               const regionUnit = regionUnits.find(r => r.label.split(' ')[1] === reg);
               const { unknown: regUnknown, remaining: regRemaining } = unitState(regionUnit);
@@ -803,52 +802,74 @@
               const fullyContained = regUnknown.length === cellsInside.length;
               if (fullyContained) {
                 guaranteed += regRemaining;
-              } else if (cellsInside.length > regRemaining) {
-                // This region could never fill all its inside cells with
-                // stars anyway, so we can't conclude anything clean here.
-                safe = false; break;
               } else {
-                protrudingCells.push(...cellsInside);
+                protruding.push({ reg, cellsInside, regRemaining });
               }
             }
-            if (!safe) continue;
 
             const deficit = totalNeed - guaranteed;
-            if (deficit <= 0) continue;
+            if (deficit <= 0 || !protruding.length) continue;
 
-            if (protrudingCells.length === deficit) {
+            const allCells = protruding.flatMap(p => p.cellsInside);
+
+            // Case A: every protruding region could in principle supply
+            // all of its inside cells as stars (cellsInside <= its own
+            // remaining), and together they have exactly as many cells as
+            // the shortfall — so all of them must be stars.
+            const allSafe = protruding.every(p => p.cellsInside.length <= p.regRemaining);
+            if (allSafe && allCells.length === deficit) {
               const lineLabels = lineCombo.map(l => l.label).join(', ');
               return {
-                cause: [...lineCellSet], target: protrudingCells,
-                text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig. De regio's die daar volledig binnen vallen kunnen er samen maar ${guaranteed} leveren, dus ${deficit === 1 ? 'moet er nog 1 ster' : `moeten er nog ${deficit} sterren`} bij de uitstekende cellen van de andere regio's vandaan komen — en dat kan alleen als ${protrudingCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${protrudingCells.length === 1 ? 'is' : 'zijn'}.`,
+                cause: [...lineCellSet], target: allCells,
+                text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig. De regio's die daar volledig binnen vallen kunnen er samen maar ${guaranteed} leveren, dus ${deficit === 1 ? 'moet er nog 1 ster' : `moeten er nog ${deficit} sterren`} bij de uitstekende cellen van de andere regio's vandaan komen — en dat kan alleen als ${allCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${allCells.length === 1 ? 'is' : 'zijn'}.`,
                 place: true,
               };
             }
 
-            // The protrusion may be bigger than the shortfall, so we can't
-            // pin down which cells become stars — but we still know at
-            // least `deficit` of them will be. Any other cell that
-            // touches every single one of them would touch whichever
-            // cell(s) end up as stars, so it can't be a star itself.
-            const protrudingSet = new Set(protrudingCells);
-            const candidateCrosses = [];
-            const [fr, fc] = protrudingCells[0].split(',').map(Number);
-            for (let dr = -1; dr <= 1; dr++) {
-              for (let dc = -1; dc <= 1; dc++) {
-                if (dr === 0 && dc === 0) continue;
-                const rr = fr + dr, cc = fc + dc;
-                if (rr < 1 || rr > n || cc < 1 || cc > n) continue;
-                const cand = key(rr, cc);
-                if (stars.has(cand) || marks.has(cand) || protrudingSet.has(cand)) continue;
-                if (protrudingCells.every(pc => isAdjacent(cand, pc))) candidateCrosses.push(cand);
+            // Case B: isolate one protruding region at a time. If the
+            // shortfall exceeds what every *other* protruding region could
+            // maximally supply, this region alone must cover the gap —
+            // regardless of how big its own protrusion is.
+            for (const p of protruding) {
+              const maxOthers = protruding
+                .filter(o => o !== p)
+                .reduce((sum, o) => sum + Math.min(o.regRemaining, o.cellsInside.length), 0);
+              const localDeficit = deficit - maxOthers;
+              if (localDeficit <= 0) continue;
+
+              const regionLabel = regionUnits.find(r => r.label.split(' ')[1] === p.reg).label;
+              if (p.cellsInside.length === localDeficit) {
+                const lineLabels = lineCombo.map(l => l.label).join(', ');
+                return {
+                  cause: [...lineCellSet], target: p.cellsInside,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en zonder ${regionLabel} kunnen alle andere regio's samen er hoogstens ${guaranteed + maxOthers} leveren. ${capitalize(regionLabel)} moet dus zelf nog ${localDeficit === 1 ? '1 ster' : `${localDeficit} sterren`} bijdragen binnen ${lineLabels}, en dat kan alleen als ${p.cellsInside.length === 1 ? 'die ene cel' : 'al die cellen'} van ${regionLabel} daar een ster ${p.cellsInside.length === 1 ? 'is' : 'zijn'}.`,
+                  place: true,
+                };
               }
-            }
-            if (candidateCrosses.length) {
-              const lineLabels = lineCombo.map(l => l.label).join(', ');
-              return {
-                cause: [...lineCellSet], target: candidateCrosses,
-                text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en de regio's die daar volledig binnen vallen leveren er maar ${guaranteed}. Dus moet${deficit === 1 ? '' : 'en'} er nog ${deficit === 1 ? 'minstens 1 ster' : `minstens ${deficit} sterren`} ergens tussen de uitstekende cellen van de andere regio's komen te staan. Waar precies staat nog niet vast, maar ${candidateCrosses.length === 1 ? 'deze cel raakt' : 'deze cellen raken'} ze stuk voor stuk aan, dus ${candidateCrosses.length === 1 ? 'die cel wordt' : 'die worden'} een kruisje${candidateCrosses.length === 1 ? '' : 's'}.`,
-              };
+
+              // Same idea, but the protrusion is bigger than what's
+              // forced — so find cells that touch every one of this
+              // region's inside cells, which must then be crosses.
+              const insideSet = new Set(p.cellsInside);
+              const candidateCrosses = [];
+              const [fr, fc] = p.cellsInside[0].split(',').map(Number);
+              for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                  if (dr === 0 && dc === 0) continue;
+                  const rr = fr + dr, cc = fc + dc;
+                  if (rr < 1 || rr > n || cc < 1 || cc > n) continue;
+                  const cand = key(rr, cc);
+                  if (stars.has(cand) || marks.has(cand) || insideSet.has(cand)) continue;
+                  if (p.cellsInside.every(pc => isAdjacent(cand, pc))) candidateCrosses.push(cand);
+                }
+              }
+              if (candidateCrosses.length) {
+                const lineLabels = lineCombo.map(l => l.label).join(', ');
+                return {
+                  cause: [...lineCellSet], target: candidateCrosses,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en zonder ${regionLabel} kunnen de andere regio's samen er hoogstens ${guaranteed + maxOthers} leveren. Dus moet ${regionLabel} zelf nog ${localDeficit === 1 ? 'minstens 1 ster' : `minstens ${localDeficit} sterren`} bijdragen binnen ${lineLabels}. Waar precies staat nog niet vast, maar ${candidateCrosses.length === 1 ? 'deze cel raakt' : 'deze cellen raken'} alle kandidaatcellen van ${regionLabel} daar, dus ${candidateCrosses.length === 1 ? 'die cel wordt' : 'die worden'} een kruisje${candidateCrosses.length === 1 ? '' : 's'}.`,
+                };
+              }
             }
           }
         }
