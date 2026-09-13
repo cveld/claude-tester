@@ -875,6 +875,133 @@
         }
       }
 
+      // Rule 7: for a row, column or region with only a handful of
+      // remaining candidate cells, try every valid (non-adjacent)
+      // placement of its remaining stars, and for each one check whether
+      // the rest of the board can still be completed at all (a full
+      // backtracking search, not just simple propagation — some
+      // contradictions only show up several moves later). Whatever is
+      // true in EVERY placement that still allows a full completion is
+      // forced: a cell that's a star in all of them must be a star; a
+      // candidate that's a star in NONE of them must be a cross. This
+      // also covers a region that already has one star: with only one
+      // star left to place, each "placement" is a single cell, so any
+      // candidate that dead-ends becomes a cross even if others survive.
+      const CANDIDATE_CAP = 6;
+
+      function isCompletable(hypStars, hypCrosses) {
+        const fixedMarks = new Set(marks);
+        for (const c of hypCrosses) fixedMarks.add(c);
+        const placed = new Set(stars);
+        for (const c of hypStars) placed.add(c);
+
+        const placedArr = [...placed];
+        for (let i = 0; i < placedArr.length; i++) {
+          for (let j = i + 1; j < placedArr.length; j++) {
+            if (isAdjacent(placedArr[i], placedArr[j])) return false;
+          }
+        }
+        const colCount = {}, regCount = {};
+        for (const s of placed) {
+          const [, c] = s.split(',').map(Number);
+          colCount[c] = (colCount[c] || 0) + 1;
+          const reg = cellRegion[s];
+          regCount[reg] = (regCount[reg] || 0) + 1;
+          if (colCount[c] > 2 || regCount[reg] > 2) return false;
+        }
+        for (let r = 1; r <= n; r++) {
+          if (placedArr.filter(s => Number(s.split(',')[0]) === r).length > 2) return false;
+        }
+
+        function rowStarsIn(r) {
+          const res = [];
+          for (const s of placed) {
+            const [rr, cc] = s.split(',').map(Number);
+            if (rr === r) res.push(cc);
+          }
+          return res;
+        }
+
+        function backtrack(row) {
+          if (row > n) return true;
+          const existing = rowStarsIn(row);
+          const need = 2 - existing.length;
+          if (need === 0) return backtrack(row + 1);
+
+          const candidates = [];
+          for (let c = 1; c <= n; c++) {
+            const k = key(row, c);
+            if (placed.has(k) || fixedMarks.has(k)) continue;
+            candidates.push(c);
+          }
+          for (const combo of combinations(candidates, need)) {
+            let ok = combo.every((a, i) => combo.slice(i + 1).every(b => Math.abs(a - b) > 1));
+            if (ok) ok = combo.every(c => existing.every(e => Math.abs(c - e) > 1));
+            if (ok) {
+              for (const c of combo) {
+                const k = key(row, c);
+                for (const p of placed) if (isAdjacent(k, p)) { ok = false; break; }
+                if (!ok) break;
+              }
+            }
+            if (!ok) continue;
+            const added = [];
+            let capOk = true;
+            for (const c of combo) {
+              const k = key(row, c);
+              const reg = cellRegion[k];
+              colCount[c] = (colCount[c] || 0) + 1;
+              regCount[reg] = (regCount[reg] || 0) + 1;
+              if (colCount[c] > 2 || regCount[reg] > 2) capOk = false;
+              placed.add(k);
+              added.push([k, c, reg]);
+            }
+            if (capOk && backtrack(row + 1)) return true;
+            for (const [k, c, reg] of added) {
+              placed.delete(k);
+              colCount[c]--;
+              regCount[reg]--;
+            }
+          }
+          return false;
+        }
+
+        return backtrack(1);
+      }
+
+      for (const unit of units) {
+        const { unknown, remaining } = unitState(unit);
+        if (remaining <= 0 || unknown.length <= remaining) continue; // rule 3 already covers this
+        if (unknown.length > CANDIDATE_CAP) continue; // keep the search bounded
+
+        const placements = combinations(unknown, remaining)
+          .filter(combo => combo.every((a, i) => combo.slice(i + 1).every(b => !isAdjacent(a, b))));
+        if (placements.length <= 1) continue;
+
+        const feasible = placements.filter(combo => {
+          const crosses = unknown.filter(c => !combo.includes(c));
+          return isCompletable(combo, crosses);
+        });
+        if (!feasible.length || feasible.length === placements.length) continue;
+
+        const forcedStars = unknown.filter(c => feasible.every(combo => combo.includes(c)));
+        const forcedCrosses = unknown.filter(c => feasible.every(combo => !combo.includes(c)));
+
+        if (forcedStars.length) {
+          return {
+            cause: unit.cells.filter(c => stars.has(c)), target: forcedStars,
+            text: `Ik heb alle geldige manieren bekeken om de ${remaining === 1 ? 'ster' : `${remaining} sterren`} van ${unit.label} te plaatsen: ${placements.length} in totaal, maar maar ${feasible.length} daarvan botsen nergens anders op het bord. ${forcedStars.length === 1 ? 'In elk van die geldige mogelijkheden staat op deze cel een ster' : 'In elk van die geldige mogelijkheden staan op deze cellen sterren'}, dus dat moet wel kloppen.`,
+            place: true,
+          };
+        }
+        if (forcedCrosses.length) {
+          return {
+            cause: unit.cells.filter(c => stars.has(c)), target: forcedCrosses,
+            text: `Ik heb alle geldige manieren bekeken om de ${remaining === 1 ? 'ster' : `${remaining} sterren`} van ${unit.label} te plaatsen: ${placements.length} in totaal, maar maar ${feasible.length} daarvan botsen nergens anders op het bord. In geen van die geldige mogelijkheden ${forcedCrosses.length === 1 ? 'staat op deze cel' : 'staan op deze cellen'} een ster, dus ${forcedCrosses.length === 1 ? 'wordt die' : 'worden die'} een kruisje${forcedCrosses.length === 1 ? '' : 's'}.`,
+          };
+        }
+      }
+
       return null;
     }
 
