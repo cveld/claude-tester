@@ -672,6 +672,56 @@
         }
       }
 
+      // Rule 4b: the mirror image of rule 4. If the combined remaining
+      // candidates of a set of k rows (or k columns) sit only within k
+      // regions, and those k lines together need exactly as many stars as
+      // those k regions still need, then every star those regions place
+      // must land inside this line set — any candidate of those regions
+      // outside the lines is a cross.
+      for (const [dim, lineUnitsList] of [['rij', rowUnits], ['kolom', colUnits]]) {
+        const activeLines = lineUnitsList.filter(u => unitState(u).remaining > 0);
+        const maxLineGroupSize = Math.min(activeLines.length, regionUnits.length);
+        for (let k = 1; k <= maxLineGroupSize; k++) {
+          for (const lineCombo of combinations(activeLines, k)) {
+            const unionCells = new Set();
+            let lineRemainingSum = 0;
+            for (const line of lineCombo) {
+              const { unknown, remaining } = unitState(line);
+              lineRemainingSum += remaining;
+              for (const cell of unknown) unionCells.add(cell);
+            }
+            if (!unionCells.size) continue;
+
+            const regionIds = new Set([...unionCells].map(cell => cellRegion[cell]));
+            if (regionIds.size !== k) continue;
+            const regionsInvolved = regionUnits.filter(r => regionIds.has(r.label.split(' ')[1]));
+            if (regionsInvolved.length !== k) continue;
+
+            let regRemainingSum = 0;
+            for (const region of regionsInvolved) regRemainingSum += unitState(region).remaining;
+            if (regRemainingSum !== lineRemainingSum) continue;
+
+            const outside = [];
+            for (const region of regionsInvolved) {
+              for (const cell of region.cells) {
+                if (!stars.has(cell) && !marks.has(cell) && !unionCells.has(cell)) outside.push(cell);
+              }
+            }
+            if (outside.length) {
+              const lineLabels = lineCombo.map(l => l.label).join(', ');
+              const regionLabels = regionsInvolved.map(r => r.label).join(', ');
+              const dimWord = dim === 'rij' ? (k === 1 ? 'rij' : 'rijen') : (k === 1 ? 'kolom' : 'kolommen');
+              return {
+                cause: [...unionCells], target: outside,
+                text: k === 1
+                  ? `${capitalize(lineLabels)} kan zijn resterende ${lineRemainingSum === 1 ? 'ster' : 'sterren'} alleen nog in ${regionLabels} plaatsen. Daarmee zit ${regionLabels} al vol met sterren uit ${lineLabels}, dus de rest van ${regionLabels} wordt kruisjes.`
+                  : `${capitalize(lineLabels)} hebben samen nog ${lineRemainingSum} sterren nodig, en die passen alleen nog in ${regionLabels} (${k} regio's). Dus die regio's zitten straks vol met sterren uit deze ${dimWord} — de rest van die regio's wordt kruisjes.`,
+              };
+            }
+          }
+        }
+      }
+
       // Rule 5: if placing a star on a given cell would leave some row,
       // column or region without enough remaining candidates for its
       // needed stars (because the star's neighbours get eliminated), that
