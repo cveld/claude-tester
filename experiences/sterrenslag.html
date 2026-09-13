@@ -95,6 +95,15 @@
     .cell.hint-new { box-shadow: inset 0 0 0 3px var(--accent); }
     .cell.hint-cause { box-shadow: inset 0 0 0 2px var(--star); }
     .cell.hint-new.hint-cause { box-shadow: inset 0 0 0 2px var(--star), inset 0 0 0 4px var(--accent); }
+    .cell.user-color::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(250, 204, 21, .55);
+      pointer-events: none;
+    }
+    .board.paint-mode .cell { cursor: crosshair; }
+    #colorModeBtn.active { background: var(--accent); color: #fff; }
     .cell[data-br="1"] { border-right: 3px solid var(--line-strong); }
     .cell[data-bb="1"] { border-bottom: 3px solid var(--line-strong); }
     .cell[data-bl="1"] { border-left: 3px solid var(--line-strong); }
@@ -143,7 +152,7 @@
 
   <main class="experience">
     <h1 id="title">Sterrenslag</h1>
-    <p class="note">Klik op een cel om te wisselen tussen leeg, kruisje (×) en ster. Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
+    <p class="note">Klik op een cel om te wisselen tussen leeg, kruisje (×) en ster. Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal). Zet "Kleur" aan om cellen geel te markeren als geheugensteun.</p>
 
     <div class="puzzle-select">
       <label for="puzzlePicker">Puzzel:</label>
@@ -160,6 +169,7 @@
         </div>
         <div class="toolbar">
           <button class="btn secondary" id="clearBtn">Wis bord</button>
+          <button class="btn secondary" id="colorModeBtn">Kleur</button>
           <button class="btn secondary" id="hintBtn">Hint</button>
           <button class="btn" id="solveBtn">Toon de oplossing</button>
         </div>
@@ -222,8 +232,9 @@
       },
     };
 
-    let n, regionCells, cellRegion, solutionStars, stars, marks, cellEls;
+    let n, regionCells, cellRegion, solutionStars, stars, marks, userColors, cellEls;
     let hintNew = new Set(), hintCause = new Set();
+    let colorMode = false;
 
     const board = document.getElementById('board');
     const colcounts = document.getElementById('colcounts');
@@ -235,6 +246,7 @@
     const picker = document.getElementById('puzzlePicker');
     const puzzleMeta = document.getElementById('puzzleMeta');
     const hintBox = document.getElementById('hintBox');
+    const colorModeBtn = document.getElementById('colorModeBtn');
 
     for (const [id, p] of Object.entries(puzzles)) {
       const opt = document.createElement('option');
@@ -251,6 +263,7 @@
       solutionStars = new Set(p.solutionStars);
       stars = new Set();
       marks = new Set();
+      userColors = new Set();
       hintNew = new Set();
       hintCause = new Set();
       cellRegion = {};
@@ -318,6 +331,11 @@
 
     function toggle(r, c) {
       const k = `${r},${c}`;
+      if (colorMode) {
+        if (userColors.has(k)) userColors.delete(k); else userColors.add(k);
+        render();
+        return;
+      }
       if (marks.has(k)) { marks.delete(k); stars.add(k); }
       else if (stars.has(k)) { stars.delete(k); }
       else { marks.add(k); }
@@ -361,6 +379,7 @@
       for (const [k, div] of Object.entries(cellEls)) {
         div.classList.toggle('star', stars.has(k));
         div.classList.toggle('marked', marks.has(k));
+        div.classList.toggle('user-color', userColors.has(k));
         div.classList.toggle('conflict', conflicted.has(k));
         div.classList.toggle('hint-new', hintNew.has(k));
         div.classList.toggle('hint-cause', hintCause.has(k));
@@ -402,7 +421,13 @@
     }
 
     document.getElementById('clearBtn').addEventListener('click', () => {
-      stars = new Set(); marks = new Set(); clearHint(); render();
+      stars = new Set(); marks = new Set(); userColors = new Set(); clearHint(); render();
+    });
+    colorModeBtn.addEventListener('click', () => {
+      colorMode = !colorMode;
+      colorModeBtn.classList.toggle('active', colorMode);
+      colorModeBtn.textContent = colorMode ? 'Kleur: aan' : 'Kleur';
+      board.classList.toggle('paint-mode', colorMode);
     });
     document.getElementById('solveBtn').addEventListener('click', () => {
       stars = new Set(solutionStars);
