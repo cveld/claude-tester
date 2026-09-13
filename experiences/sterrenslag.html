@@ -629,12 +629,33 @@
       // cluster adjacent to any cell in another). Each cluster can hold
       // at most as many non-touching stars as its own layout allows —
       // a lone cell holds at most 1; two touching cells also hold at
-      // most 1 between them; a longer run can hold more. If those
-      // per-cluster maximums add up to exactly how many stars the unit
-      // still needs, every cluster must hit its own maximum exactly —
-      // e.g. a 1-cell cluster next to a 2-cell (touching) cluster, with
-      // 2 stars still needed, forces a star into the 1-cell cluster and
-      // one somewhere in the 2-cell cluster.
+      // most 1 between them; three in a straight row can hold 2 (the
+      // two ends, never the middle); a longer run can hold more. If
+      // those per-cluster maximums add up to exactly how many stars the
+      // unit still needs, every cluster must hit its own maximum exactly
+      // — even a single cluster covering the whole unit counts (its
+      // "sum" is just its own max). Within a cluster that must hit its
+      // max, we then check every way of actually doing that: a cell
+      // present in ALL of them must be a star; a cell present in NONE of
+      // them must be a cross. A 3-in-a-row cluster needing 2 stars has
+      // only one way to do it (the two ends), so both ends become stars
+      // and the middle a cross in one step.
+      function allMaxIndependentSets(cells, targetSize) {
+        const results = [];
+        (function backtrack(idx, chosen) {
+          if (chosen.length === targetSize) { results.push(chosen.slice()); return; }
+          if (idx >= cells.length) return;
+          if (chosen.length + (cells.length - idx) < targetSize) return;
+          if (chosen.every(c => !isAdjacent(c, cells[idx]))) {
+            chosen.push(cells[idx]);
+            backtrack(idx + 1, chosen);
+            chosen.pop();
+          }
+          backtrack(idx + 1, chosen);
+        })(0, []);
+        return results;
+      }
+
       for (const unit of units) {
         const { unknown, remaining } = unitState(unit);
         if (remaining <= 0 || unknown.length <= remaining) continue; // rule 3 already covers this
@@ -658,18 +679,34 @@
           }
           clusters.push(cluster);
         }
-        if (clusters.length < 2) continue;
 
         const clusterMax = clusters.map(cl => maxAchievable(cl, remaining));
         const sumMax = clusterMax.reduce((a, b) => a + b, 0);
         if (sumMax !== remaining) continue;
 
         for (let i = 0; i < clusters.length; i++) {
-          if (clusterMax[i] > 0 && clusterMax[i] === clusters[i].length) {
+          const cluster = clusters[i], target = clusterMax[i];
+          if (cluster.length > INDEP_CAP) continue; // keep enumeration cheap
+
+          const sets = allMaxIndependentSets(cluster, target);
+          if (!sets.length) continue;
+          const forcedStars = cluster.filter(c => sets.every(set => set.includes(c)));
+          const forcedCrosses = cluster.filter(c => sets.every(set => !set.includes(c)));
+          const clusterDesc = clusters.length === 1
+            ? `De overgebleven cellen vormen samen één groepje, dat`
+            : `De overgebleven cellen vallen uiteen in ${clusters.length} groepjes die elkaar onderling niet raken, en dit groepje van ${cluster.length === 1 ? '1 cel' : `${cluster.length} cellen`}`;
+
+          if (forcedStars.length) {
             return {
-              cause: [], target: clusters[i],
-              text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. De overgebleven cellen vallen uiteen in ${clusters.length} groepjes die elkaar onderling niet raken, en door onderlinge aanraking binnen elk groepje kunnen ze samen precies ${remaining} ster${remaining === 1 ? '' : 'ren'} bevatten — geen ruimte over. ${clusters[i].length === 1 ? 'Dit groepje is maar 1 cel' : `Dit groepje van ${clusters[i].length} cellen kan door onderlinge aanraking maar ${clusterMax[i]} ster bevatten`}, dus ${clusters[i].length === 1 ? 'die cel wordt' : 'die cellen worden'} een ster.`,
+              cause: [], target: forcedStars,
+              text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. ${clusterDesc} kan door onderlinge aanraking maar ${target} ster${target === 1 ? '' : 'ren'} bevatten, en er is maar één manier om die te plaatsen: ${forcedStars.length === 1 ? 'op deze cel' : 'op deze cellen'} staat in elke geldige verdeling een ster, dus dat moet wel kloppen.`,
               place: true,
+            };
+          }
+          if (forcedCrosses.length) {
+            return {
+              cause: [], target: forcedCrosses,
+              text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. ${clusterDesc} kan door onderlinge aanraking maar ${target} ster${target === 1 ? '' : 'ren'} bevatten. In geen enkele manier om die te plaatsen komt op ${forcedCrosses.length === 1 ? 'deze cel' : 'deze cellen'} een ster, dus ${forcedCrosses.length === 1 ? 'wordt die' : 'worden die'} een kruisje${forcedCrosses.length === 1 ? '' : 's'}.`,
             };
           }
         }
