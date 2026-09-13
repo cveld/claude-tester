@@ -104,6 +104,8 @@
     }
     .board.paint-mode .cell { cursor: crosshair; }
     #colorModeBtn.active { background: var(--accent); color: #fff; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn:disabled:hover { filter: none; transform: none; }
     .cell[data-br="1"] { border-right: 3px solid var(--line-strong); }
     .cell[data-bb="1"] { border-bottom: 3px solid var(--line-strong); }
     .cell[data-bl="1"] { border-left: 3px solid var(--line-strong); }
@@ -168,6 +170,7 @@
           <div class="board" id="board" aria-label="Interactief sterrenslag-bord"></div>
         </div>
         <div class="toolbar">
+          <button class="btn secondary" id="undoBtn" disabled>Ongedaan maken</button>
           <button class="btn secondary" id="clearBtn">Wis bord</button>
           <button class="btn secondary" id="colorModeBtn">Kleur</button>
           <button class="btn secondary" id="hintBtn">Hint</button>
@@ -235,6 +238,7 @@
     let n, regionCells, cellRegion, solutionStars, stars, marks, userColors, cellEls;
     let hintNew = new Set(), hintCause = new Set();
     let colorMode = false;
+    let history = [];
 
     const board = document.getElementById('board');
     const colcounts = document.getElementById('colcounts');
@@ -247,6 +251,25 @@
     const puzzleMeta = document.getElementById('puzzleMeta');
     const hintBox = document.getElementById('hintBox');
     const colorModeBtn = document.getElementById('colorModeBtn');
+    const undoBtn = document.getElementById('undoBtn');
+
+    function pushHistory() {
+      history.push({ stars: [...stars], marks: [...marks], userColors: [...userColors] });
+      if (history.length > 200) history.shift();
+      undoBtn.disabled = false;
+    }
+
+    function undo() {
+      const prev = history.pop();
+      if (!prev) return;
+      stars = new Set(prev.stars);
+      marks = new Set(prev.marks);
+      userColors = new Set(prev.userColors);
+      clearHint();
+      undoBtn.disabled = history.length === 0;
+      render();
+    }
+    undoBtn.addEventListener('click', undo);
 
     for (const [id, p] of Object.entries(puzzles)) {
       const opt = document.createElement('option');
@@ -266,6 +289,8 @@
       userColors = new Set();
       hintNew = new Set();
       hintCause = new Set();
+      history = [];
+      undoBtn.disabled = true;
       cellRegion = {};
       for (const [reg, cells] of Object.entries(regionCells)) {
         for (const [r, c] of cells) cellRegion[`${r},${c}`] = reg;
@@ -331,6 +356,7 @@
 
     function toggle(r, c) {
       const k = `${r},${c}`;
+      pushHistory();
       if (colorMode) {
         if (userColors.has(k)) userColors.delete(k); else userColors.add(k);
         render();
@@ -421,6 +447,7 @@
     }
 
     document.getElementById('clearBtn').addEventListener('click', () => {
+      pushHistory();
       stars = new Set(); marks = new Set(); userColors = new Set(); clearHint(); render();
     });
     colorModeBtn.addEventListener('click', () => {
@@ -430,6 +457,7 @@
       board.classList.toggle('paint-mode', colorMode);
     });
     document.getElementById('solveBtn').addEventListener('click', () => {
+      pushHistory();
       stars = new Set(solutionStars);
       marks = new Set();
       for (let r = 1; r <= n; r++) {
@@ -632,6 +660,7 @@
     function applyHint() {
       const hint = computeHint();
       if (hint) {
+        pushHistory();
         if (hint.place) {
           for (const k of hint.target) stars.add(k);
         } else {
@@ -656,6 +685,7 @@
         }
       }
       if (missingCross) {
+        pushHistory();
         marks.add(missingCross);
         hintCause = new Set();
         hintNew = new Set([missingCross]);
@@ -667,6 +697,7 @@
 
       const missing = [...solutionStars].find(k => !stars.has(k));
       if (missing) {
+        pushHistory();
         stars.add(missing);
         marks.delete(missing);
         hintCause = new Set();
