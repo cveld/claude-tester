@@ -31,7 +31,7 @@
       margin-top: 1.5rem;
     }
 
-    .board-col { display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; }
+    .board-col { display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; max-width: 100%; }
 
     .puzzle-select { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
     .puzzle-select select {
@@ -111,7 +111,7 @@
     .cell[data-bl="1"] { border-left: 3px solid var(--line-strong); }
     .cell[data-bt="1"] { border-top: 3px solid var(--line-strong); }
 
-    .toolbar { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .toolbar { display: flex; gap: .6rem; flex-wrap: wrap; max-width: min(480px, 88vw); }
 
     .hint-box {
       border-radius: var(--radius);
