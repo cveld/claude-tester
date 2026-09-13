@@ -603,8 +603,12 @@
       // together need exactly as many stars as those k rows/columns still
       // need, then every star in those lines must come from this region
       // set — any other cell in those lines is a cross. k=1 is the simple
-      // "one region confined to one line" case; k=2/3 catches combinations
-      // where no single region alone is confined, but a small group is.
+      // "one region confined to one line" case; larger k catches groups of
+      // regions that are jointly confined even though no smaller subset is.
+      // Checked for every group size up to the number of regions still
+      // needing stars (bounded by the grid size too, since a group can
+      // never be confined to more lines than the board has) — cheap even
+      // at k up to ~10-11 since it's just set operations per combination.
       const regionUnits = units.filter(u => u.kind === 'regio');
       const rowUnits = units.filter(u => u.kind === 'rij');
       const colUnits = units.filter(u => u.kind === 'kolom');
@@ -624,7 +628,8 @@
         return result;
       }
 
-      for (let k = 1; k <= Math.min(3, activeRegions.length); k++) {
+      const maxGroupSize = Math.min(activeRegions.length, n);
+      for (let k = 1; k <= maxGroupSize; k++) {
         for (const regionCombo of combinations(activeRegions, k)) {
           const unionCells = new Set();
           let regRemainingSum = 0;
