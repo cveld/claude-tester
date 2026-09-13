@@ -37,6 +37,8 @@
     .puzzle-select select {
       font: inherit; padding: .35rem .6rem; border-radius: 6px; border: 1px solid var(--line);
     }
+    .puzzle-meta { font-size: .85rem; color: var(--muted); margin: .2rem 0 0; }
+    .puzzle-meta a { color: var(--accent); }
 
     .board-grid {
       display: grid;
@@ -82,14 +84,32 @@
       color: var(--star);
       -webkit-text-stroke: .5px var(--star-ink);
     }
+    .cell.marked::after {
+      content: "×";
+      font-size: clamp(12px, 2.6vw, 20px);
+      font-weight: 700;
+      color: var(--muted);
+    }
     .cell.conflict { box-shadow: inset 0 0 0 2px var(--bad-ink); }
     .cell.conflict::after { color: var(--bad-ink); }
+    .cell.hint-new { box-shadow: inset 0 0 0 3px var(--accent); }
+    .cell.hint-cause { box-shadow: inset 0 0 0 2px var(--star); }
+    .cell.hint-new.hint-cause { box-shadow: inset 0 0 0 2px var(--star), inset 0 0 0 4px var(--accent); }
     .cell[data-br="1"] { border-right: 3px solid var(--line-strong); }
     .cell[data-bb="1"] { border-bottom: 3px solid var(--line-strong); }
     .cell[data-bl="1"] { border-left: 3px solid var(--line-strong); }
     .cell[data-bt="1"] { border-top: 3px solid var(--line-strong); }
 
     .toolbar { display: flex; gap: .6rem; flex-wrap: wrap; }
+
+    .hint-box {
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      font-size: .9rem; line-height: 1.5;
+      background: #ede9fe; color: #4c1d95;
+      border: 1px solid #ddd6fe;
+    }
+    .hint-box strong { display: block; font-size: .95rem; margin-bottom: .15rem; }
 
     aside { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 1.25rem; }
     .status {
@@ -123,12 +143,13 @@
 
   <main class="experience">
     <h1 id="title">Sterrenslag</h1>
-    <p class="note">Klik op een cel om een ster te zetten of weg te halen. Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
+    <p class="note">Klik op een cel om te wisselen tussen leeg, ster en kruisje (×). Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
 
     <div class="puzzle-select">
       <label for="puzzlePicker">Puzzel:</label>
       <select id="puzzlePicker"></select>
     </div>
+    <p class="puzzle-meta" id="puzzleMeta"></p>
 
     <div class="board-layout">
       <div class="board-col">
@@ -139,6 +160,7 @@
         </div>
         <div class="toolbar">
           <button class="btn secondary" id="clearBtn">Wis bord</button>
+          <button class="btn secondary" id="hintBtn">Hint</button>
           <button class="btn" id="solveBtn">Toon de oplossing</button>
         </div>
       </div>
@@ -148,6 +170,8 @@
           <strong>0 sterren geplaatst</strong>
           Elke rij, kolom en regio heeft er 2 nodig.
         </div>
+
+        <div class="hint-box" id="hintBox" hidden></div>
 
         <div class="legend">
           <h2 id="legend-title">Regio's</h2>
@@ -176,10 +200,13 @@
           K: [[5,4],[6,4],[7,4],[7,5],[7,6]],
         },
         solutionStars: ["1,3","1,5","2,7","2,9","3,5","3,11","4,2","4,8","5,6","5,10","6,2","6,4","7,6","7,10","8,4","8,8","9,1","9,11","10,3","10,9","11,1","11,7"],
+        source: { name: 'Inkwell Games', url: 'https://inkwellgames.com' },
       },
       p9: {
         label: '9×9',
         n: 9,
+        date: '12 september 2026',
+        source: { name: 'Inkwell Games', url: 'https://inkwellgames.com' },
         regionCells: {
           A: [[1,1],[1,2],[1,3],[1,4],[2,1],[2,4],[3,3],[3,4],[4,2],[4,3],[4,4],[5,2],[5,4]],
           B: [[1,5],[2,5],[3,5],[3,6],[4,5],[4,6],[5,5],[5,6]],
@@ -195,7 +222,8 @@
       },
     };
 
-    let n, regionCells, cellRegion, solutionStars, stars, cellEls;
+    let n, regionCells, cellRegion, solutionStars, stars, marks, cellEls;
+    let hintNew = new Set(), hintCause = new Set();
 
     const board = document.getElementById('board');
     const colcounts = document.getElementById('colcounts');
@@ -205,6 +233,8 @@
     const statusEl = document.getElementById('status');
     const titleEl = document.getElementById('title');
     const picker = document.getElementById('puzzlePicker');
+    const puzzleMeta = document.getElementById('puzzleMeta');
+    const hintBox = document.getElementById('hintBox');
 
     for (const [id, p] of Object.entries(puzzles)) {
       const opt = document.createElement('option');
@@ -220,6 +250,9 @@
       regionCells = p.regionCells;
       solutionStars = new Set(p.solutionStars);
       stars = new Set();
+      marks = new Set();
+      hintNew = new Set();
+      hintCause = new Set();
       cellRegion = {};
       for (const [reg, cells] of Object.entries(regionCells)) {
         for (const [r, c] of cells) cellRegion[`${r},${c}`] = reg;
@@ -227,6 +260,12 @@
 
       titleEl.textContent = `Sterrenslag ${p.label}`;
       legendTitle.textContent = `Regio's (${Object.keys(regionCells).length})`;
+      const metaParts = [];
+      if (p.date) metaParts.push(`Datum: ${p.date}`);
+      if (p.source) metaParts.push(`Bron: <a href="${p.source.url}" target="_blank" rel="noopener">${p.source.name}</a>`);
+      puzzleMeta.innerHTML = metaParts.join(' · ');
+      hintBox.hidden = true;
+      hintBox.innerHTML = '';
 
       board.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
       colcounts.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
@@ -279,8 +318,18 @@
 
     function toggle(r, c) {
       const k = `${r},${c}`;
-      if (stars.has(k)) stars.delete(k); else stars.add(k);
+      if (stars.has(k)) { stars.delete(k); marks.add(k); }
+      else if (marks.has(k)) { marks.delete(k); }
+      else { stars.add(k); }
+      clearHint();
       render();
+    }
+
+    function clearHint() {
+      hintNew = new Set();
+      hintCause = new Set();
+      hintBox.hidden = true;
+      hintBox.innerHTML = '';
     }
 
     function key(r, c) { return `${r},${c}`; }
@@ -311,7 +360,10 @@
 
       for (const [k, div] of Object.entries(cellEls)) {
         div.classList.toggle('star', stars.has(k));
+        div.classList.toggle('marked', marks.has(k));
         div.classList.toggle('conflict', conflicted.has(k));
+        div.classList.toggle('hint-new', hintNew.has(k));
+        div.classList.toggle('hint-cause', hintCause.has(k));
       }
       for (let r = 1; r <= n; r++) {
         const el = document.getElementById(`row-${r}`);
@@ -349,8 +401,202 @@
       }
     }
 
-    document.getElementById('clearBtn').addEventListener('click', () => { stars = new Set(); render(); });
-    document.getElementById('solveBtn').addEventListener('click', () => { stars = new Set(solutionStars); render(); });
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      stars = new Set(); marks = new Set(); clearHint(); render();
+    });
+    document.getElementById('solveBtn').addEventListener('click', () => {
+      stars = new Set(solutionStars);
+      marks = new Set();
+      for (let r = 1; r <= n; r++) {
+        for (let c = 1; c <= n; c++) {
+          const k = `${r},${c}`;
+          if (!stars.has(k)) marks.add(k);
+        }
+      }
+      clearHint();
+      render();
+    });
+
+    // --- Hint solver -----------------------------------------------------
+    // Applies standard star-battle deduction rules to the current board
+    // state (not the stored solution) so every hint follows logically from
+    // what's already marked.
+
+    function getUnits() {
+      const units = [];
+      for (let r = 1; r <= n; r++) {
+        const cells = []; for (let c = 1; c <= n; c++) cells.push(key(r, c));
+        units.push({ kind: 'rij', label: `rij ${r}`, cells });
+      }
+      for (let c = 1; c <= n; c++) {
+        const cells = []; for (let r = 1; r <= n; r++) cells.push(key(r, c));
+        units.push({ kind: 'kolom', label: `kolom ${c}`, cells });
+      }
+      for (const reg of Object.keys(regionCells)) {
+        const cells = regionCells[reg].map(([r, c]) => key(r, c));
+        units.push({ kind: 'regio', label: `regio ${reg}`, cells });
+      }
+      return units;
+    }
+
+    function unitState(unit) {
+      const starCells = unit.cells.filter(k => stars.has(k));
+      const unknown = unit.cells.filter(k => !stars.has(k) && !marks.has(k));
+      return { starCells, unknown, remaining: 2 - starCells.length };
+    }
+
+    function findConflict() {
+      for (const s of stars) {
+        for (const t of stars) {
+          if (s !== t && isAdjacent(s, t)) {
+            return {
+              cause: [s, t], target: [],
+              text: `Twee sterren raken elkaar aan (rij/kolom naast elkaar of diagonaal) — bij ${cellLabel(s)} en ${cellLabel(t)}. Dat mag niet, haal er een weg.`,
+            };
+          }
+        }
+      }
+      for (const unit of getUnits()) {
+        const { starCells, unknown, remaining } = unitState(unit);
+        if (starCells.length > 2) {
+          return {
+            cause: starCells, target: [],
+            text: `Er staan al ${starCells.length} sterren in ${unit.label}, dat mogen er maar 2 zijn. Haal er een weg voordat je verdergaat.`,
+          };
+        }
+        if (remaining > 0 && unknown.length < remaining) {
+          return {
+            cause: [], target: [],
+            text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining > 1 ? 'ren' : ''} nodig, maar er zijn geen lege cellen meer over. Er staat ergens een kruisje dat een ster had moeten zijn — controleer ${unit.label}.`,
+          };
+        }
+      }
+      return null;
+    }
+
+    function cellLabel(k) {
+      const [r, c] = k.split(',').map(Number);
+      return `rij ${r}, kolom ${c}`;
+    }
+
+    function computeHint() {
+      const conflict = findConflict();
+      if (conflict) return conflict;
+
+      const units = getUnits();
+
+      // Rule 1: cells adjacent to an existing star must be empty (X).
+      for (const s of stars) {
+        const [r, c] = s.split(',').map(Number);
+        const targets = [];
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const rr = r + dr, cc = c + dc;
+            if (rr < 1 || rr > n || cc < 1 || cc > n) continue;
+            const k = key(rr, cc);
+            if (!stars.has(k) && !marks.has(k)) targets.push(k);
+          }
+        }
+        if (targets.length) {
+          return {
+            cause: [s], target: targets,
+            text: `Sterren mogen elkaar niet aanraken, ook niet diagonaal. Rond de ster op ${cellLabel(s)} kan dus nergens anders een ster staan — die cellen worden kruisjes.`,
+          };
+        }
+      }
+
+      // Rule 2: a unit that already has 2 stars can't take any more.
+      for (const unit of units) {
+        const { starCells, unknown } = unitState(unit);
+        if (starCells.length === 2 && unknown.length) {
+          return {
+            cause: starCells, target: unknown,
+            text: `${capitalize(unit.label)} heeft al 2 sterren, dus de rest van ${unit.kind === 'rij' ? 'die rij' : unit.kind === 'kolom' ? 'die kolom' : 'die regio'} kan geen ster meer bevatten — kruisjes erbij.`,
+          };
+        }
+      }
+
+      // Rule 3: a unit whose remaining empty cells exactly match the
+      // number of stars it still needs must place stars in all of them.
+      for (const unit of units) {
+        const { unknown, remaining } = unitState(unit);
+        if (remaining > 0 && unknown.length === remaining) {
+          return {
+            cause: [], target: unknown,
+            text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining > 1 ? 'ren' : ''} nodig en heeft nog maar ${unknown.length === 1 ? 'één mogelijke cel' : `${unknown.length} mogelijke cellen`} over, dus daar moet${remaining === 1 ? '' : 'en'} de ster${remaining > 1 ? 'ren' : ''} staan.`,
+            place: true,
+          };
+        }
+      }
+
+      // Rule 4: if all remaining candidates of a region sit in a single
+      // row/column, and that row/column needs exactly as many stars as
+      // the region still needs, the rest of that row/column is empty (X).
+      const regionUnits = units.filter(u => u.kind === 'regio');
+      const lineUnits = units.filter(u => u.kind !== 'regio');
+      for (const region of regionUnits) {
+        const { unknown: regUnknown, remaining: regRemaining } = unitState(region);
+        if (!regUnknown.length || regRemaining <= 0) continue;
+        const rows = new Set(regUnknown.map(k => k.split(',')[0]));
+        const cols = new Set(regUnknown.map(k => k.split(',')[1]));
+        for (const [dim, ids] of [['rij', rows], ['kolom', cols]]) {
+          if (ids.size !== 1) continue;
+          const id = [...ids][0];
+          const line = lineUnits.find(u => u.kind === dim && u.label === `${dim} ${id}`);
+          if (!line) continue;
+          const { unknown: lineUnknown, remaining: lineRemaining } = unitState(line);
+          if (lineRemaining !== regRemaining) continue;
+          const outside = lineUnknown.filter(k => !regUnknown.includes(k));
+          if (outside.length) {
+            return {
+              cause: regUnknown, target: outside,
+              text: `De resterende ${regRemaining === 1 ? 'ster' : 'sterren'} van ${region.label} passen alleen nog in ${dim} ${id}. Daarmee zit ${dim} ${id} al vol met sterren uit die regio, dus de rest van ${dim} ${id} wordt kruisjes.`,
+            };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+    function applyHint() {
+      const hint = computeHint();
+      if (hint) {
+        if (hint.place) {
+          for (const k of hint.target) stars.add(k);
+        } else {
+          for (const k of hint.target) marks.add(k);
+        }
+        hintCause = new Set(hint.cause);
+        hintNew = new Set(hint.target);
+        hintBox.hidden = false;
+        hintBox.innerHTML = `<strong>Hint</strong>${hint.text}`;
+        render();
+        return;
+      }
+
+      // Fallback: no simple logical step found, so reveal the next star
+      // from the solution instead of leaving the player stuck.
+      const missing = [...solutionStars].find(k => !stars.has(k));
+      if (missing) {
+        stars.add(missing);
+        marks.delete(missing);
+        hintCause = new Set();
+        hintNew = new Set([missing]);
+        hintBox.hidden = false;
+        hintBox.innerHTML = `<strong>Hint</strong>Hier volgt geen eenvoudige regel meer uit — dit is de volgende ster uit de oplossing (${cellLabel(missing)}).`;
+        render();
+        return;
+      }
+
+      hintBox.hidden = false;
+      hintBox.innerHTML = `<strong>Hint</strong>Deze puzzel is al opgelost — er zijn geen zetten meer te doen.`;
+    }
+
+    document.getElementById('hintBtn').addEventListener('click', applyHint);
 
     loadPuzzle(Object.keys(puzzles)[0]);
   </script>
