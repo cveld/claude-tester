@@ -764,6 +764,68 @@
         }
       }
 
+      // Rule 6: within a group of k rows (or k columns), some regions may
+      // be fully confined to those lines (every remaining candidate they
+      // have lies inside), so they're guaranteed to place their whole
+      // remaining star count there. If the lines need more stars in total
+      // than those confined regions can supply, the shortfall has to come
+      // from the "protruding" cells of other regions that only partially
+      // overlap these lines. When the number of those protruding cells
+      // exactly matches the shortfall, every one of them must be a star —
+      // there's no slack left to leave any of them empty.
+      for (const [dim, lineUnitsList] of [['rij', rowUnits], ['kolom', colUnits]]) {
+        const activeLines = lineUnitsList.filter(u => unitState(u).remaining > 0);
+        for (let k = 1; k <= activeLines.length; k++) {
+          for (const lineCombo of combinations(activeLines, k)) {
+            const lineCellSet = new Set();
+            let totalNeed = 0;
+            for (const line of lineCombo) {
+              const { unknown, remaining } = unitState(line);
+              totalNeed += remaining;
+              for (const cell of unknown) lineCellSet.add(cell);
+            }
+            if (!lineCellSet.size) continue;
+
+            const byRegion = new Map();
+            for (const cell of lineCellSet) {
+              const reg = cellRegion[cell];
+              if (!byRegion.has(reg)) byRegion.set(reg, []);
+              byRegion.get(reg).push(cell);
+            }
+
+            let guaranteed = 0;
+            const protrudingCells = [];
+            let safe = true;
+            for (const [reg, cellsInside] of byRegion) {
+              const regionUnit = regionUnits.find(r => r.label.split(' ')[1] === reg);
+              const { unknown: regUnknown, remaining: regRemaining } = unitState(regionUnit);
+              if (regRemaining <= 0) continue;
+              const fullyContained = regUnknown.length === cellsInside.length;
+              if (fullyContained) {
+                guaranteed += regRemaining;
+              } else if (cellsInside.length > regRemaining) {
+                // This region could never fill all its inside cells with
+                // stars anyway, so we can't conclude anything clean here.
+                safe = false; break;
+              } else {
+                protrudingCells.push(...cellsInside);
+              }
+            }
+            if (!safe) continue;
+
+            const deficit = totalNeed - guaranteed;
+            if (deficit > 0 && protrudingCells.length === deficit) {
+              const lineLabels = lineCombo.map(l => l.label).join(', ');
+              return {
+                cause: [...lineCellSet], target: protrudingCells,
+                text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig. De regio's die daar volledig binnen vallen kunnen er samen maar ${guaranteed} leveren, dus ${deficit === 1 ? 'moet er nog 1 ster' : `moeten er nog ${deficit} sterren`} bij de uitstekende cellen van de andere regio's vandaan komen — en dat kan alleen als ${protrudingCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${protrudingCells.length === 1 ? 'is' : 'zijn'}.`,
+                place: true,
+              };
+            }
+          }
+        }
+      }
+
       return null;
     }
 
