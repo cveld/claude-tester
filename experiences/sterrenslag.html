@@ -102,6 +102,19 @@
       background: rgba(250, 204, 21, .55);
       pointer-events: none;
     }
+    .region-letter {
+      display: none;
+      position: absolute;
+      top: 1px;
+      left: 3px;
+      font-size: clamp(8px, 1.6vw, 11px);
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text);
+      opacity: .65;
+      pointer-events: none;
+    }
+    .cell.hint-region .region-letter { display: block; }
     .board.paint-mode .cell { cursor: crosshair; }
     #colorModeBtn.active { background: var(--accent); color: #fff; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -248,7 +261,7 @@
     };
 
     let n, regionCells, cellRegion, solutionStars, stars, marks, userColors, cellEls;
-    let hintNew = new Set(), hintCause = new Set();
+    let hintNew = new Set(), hintCause = new Set(), hintRegions = new Set();
     let colorMode = false;
     let moveHistory = [];
 
@@ -301,6 +314,7 @@
       userColors = new Set();
       hintNew = new Set();
       hintCause = new Set();
+      hintRegions = new Set();
       moveHistory = [];
       undoBtn.disabled = true;
       cellRegion = {};
@@ -343,6 +357,10 @@
           div.addEventListener('click', () => toggle(r, c));
           div.setAttribute('role', 'button');
           div.setAttribute('aria-label', `rij ${r}, kolom ${c}`);
+          const letterEl = document.createElement('span');
+          letterEl.className = 'region-letter';
+          letterEl.textContent = reg;
+          div.appendChild(letterEl);
           board.appendChild(div);
           cellEls[`${r},${c}`] = div;
         }
@@ -387,6 +405,7 @@
     function clearHint() {
       hintNew = new Set();
       hintCause = new Set();
+      hintRegions = new Set();
       hintBox.hidden = true;
       hintBox.innerHTML = '';
     }
@@ -424,6 +443,7 @@
         div.classList.toggle('conflict', conflicted.has(k));
         div.classList.toggle('hint-new', hintNew.has(k));
         div.classList.toggle('hint-cause', hintCause.has(k));
+        div.classList.toggle('hint-region', hintRegions.has(cellRegion[k]));
       }
       for (let r = 1; r <= n; r++) {
         const el = document.getElementById(`row-${r}`);
@@ -513,6 +533,12 @@
       return { starCells, unknown, remaining: 2 - starCells.length };
     }
 
+    // Region units are labelled "regio X" — pull the bare letter back out
+    // so it can be recorded on a hint's `regions` list.
+    function regionLetter(unit) {
+      return unit.kind === 'regio' ? unit.label.split(' ')[1] : null;
+    }
+
     function findConflict() {
       for (const s of stars) {
         for (const t of stars) {
@@ -520,6 +546,7 @@
             return {
               cause: [s, t], target: [],
               text: `Twee sterren raken elkaar aan (rij/kolom naast elkaar of diagonaal) — bij ${cellLabel(s)} en ${cellLabel(t)}. Dat mag niet, haal er een weg.`,
+              regions: [...new Set([cellRegion[s], cellRegion[t]])],
             };
           }
         }
@@ -530,12 +557,14 @@
           return {
             cause: starCells, target: [],
             text: `Er staan al ${starCells.length} sterren in ${unit.label}, dat mogen er maar 2 zijn. Haal er een weg voordat je verdergaat.`,
+            regions: regionLetter(unit) ? [regionLetter(unit)] : [],
           };
         }
         if (remaining > 0 && unknown.length < remaining) {
           return {
             cause: [], target: [],
             text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining > 1 ? 'ren' : ''} nodig, maar er zijn geen lege cellen meer over. Er staat ergens een kruisje dat een ster had moeten zijn — controleer ${unit.label}.`,
+            regions: regionLetter(unit) ? [regionLetter(unit)] : [],
           };
         }
       }
@@ -610,6 +639,7 @@
           consider({
             cause: [s], target: targets,
             text: `Sterren mogen elkaar niet aanraken, ook niet diagonaal. Rond de ster op ${cellLabel(s)} kan dus nergens anders een ster staan — die cellen worden kruisjes.`,
+            regions: [cellRegion[s]],
           }, 0);
         }
       }
@@ -621,6 +651,7 @@
           consider({
             cause: starCells, target: unknown,
             text: `${capitalize(unit.label)} heeft al 2 sterren, dus de rest van ${unit.kind === 'rij' ? 'die rij' : unit.kind === 'kolom' ? 'die kolom' : 'die regio'} kan geen ster meer bevatten — kruisjes erbij.`,
+            regions: regionLetter(unit) ? [regionLetter(unit)] : [],
           }, 1);
         }
       }
@@ -634,6 +665,7 @@
             cause: [], target: unknown,
             text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining > 1 ? 'ren' : ''} nodig en heeft nog maar ${unknown.length === 1 ? 'één mogelijke cel' : `${unknown.length} mogelijke cellen`} over, dus daar moet${remaining === 1 ? '' : 'en'} de ster${remaining > 1 ? 'ren' : ''} staan.`,
             place: true,
+            regions: regionLetter(unit) ? [regionLetter(unit)] : [],
           }, 1);
         }
       }
@@ -715,11 +747,13 @@
               cause: [], target: forcedStars,
               text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. ${clusterDesc} kan door onderlinge aanraking maar ${target} ster${target === 1 ? '' : 'ren'} bevatten, en er is maar één manier om die te plaatsen: ${forcedStars.length === 1 ? 'op deze cel' : 'op deze cellen'} staat in elke geldige verdeling een ster, dus dat moet wel kloppen.`,
               place: true,
+              regions: regionLetter(unit) ? [regionLetter(unit)] : [],
             }, 1);
           } else if (forcedCrosses.length) {
             consider({
               cause: [], target: forcedCrosses,
               text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. ${clusterDesc} kan door onderlinge aanraking maar ${target} ster${target === 1 ? '' : 'ren'} bevatten. In geen enkele manier om die te plaatsen komt op ${forcedCrosses.length === 1 ? 'deze cel' : 'deze cellen'} een ster, dus ${forcedCrosses.length === 1 ? 'wordt die' : 'worden die'} een kruisje${forcedCrosses.length === 1 ? '' : 's'}.`,
+              regions: regionLetter(unit) ? [regionLetter(unit)] : [],
             }, 1);
           }
         }
@@ -793,6 +827,7 @@
                 text: k === 1
                   ? `De resterende ${regRemainingSum === 1 ? 'ster' : 'sterren'} van ${regionLabels} passen alleen nog in ${lineLabels}. Daarmee zit ${lineLabels} al vol met sterren uit die regio, dus de rest van ${lineLabels} wordt kruisjes.`
                   : `${capitalize(regionLabels)} hebben samen nog ${regRemainingSum} sterren nodig, en die passen alleen nog in ${lineLabels} (${k} ${dimWord}). Dus die ${dimWord} zitten straks vol met sterren uit deze regio's — de rest wordt kruisjes.`,
+                regions: regionCombo.map(regionLetter),
               }, 2 * k);
             }
           }
@@ -843,6 +878,7 @@
                 text: k === 1
                   ? `${capitalize(lineLabels)} kan zijn resterende ${lineRemainingSum === 1 ? 'ster' : 'sterren'} alleen nog in ${regionLabels} plaatsen. Daarmee zit ${regionLabels} al vol met sterren uit ${lineLabels}, dus de rest van ${regionLabels} wordt kruisjes.`
                   : `${capitalize(lineLabels)} hebben samen nog ${lineRemainingSum} sterren nodig, en die passen alleen nog in ${regionLabels} (${k} regio's). Dus die regio's zitten straks vol met sterren uit deze ${dimWord} — de rest van die regio's wordt kruisjes.`,
+                regions: regionsInvolved.map(regionLetter),
               }, 2 * k);
             }
           }
@@ -885,6 +921,7 @@
               consider({
                 cause: unit.cells.filter(k => !stars.has(k) && !marks.has(k)), target: [cand],
                 text: `Als op ${cellLabel(cand)} een ster zou staan, blijven er in ${unit.label} niet genoeg cellen over die niet aan elkaar grenzen voor de ${remaining === 1 ? 'ster die daar' : `${remaining} sterren die daar`} nog nodig ${remaining === 1 ? 'is' : 'zijn'} — de ster zou te veel van ${unit.kind === 'regio' ? 'die regio' : unit.kind === 'rij' ? 'die rij' : 'die kolom'} blokkeren. Dus kan hier geen ster staan — het wordt een kruisje.`,
+                regions: [...new Set([cellRegion[cand], regionLetter(unit)].filter(Boolean))],
               }, 1);
             }
           }
@@ -947,6 +984,7 @@
                 consider({
                   cause: [...lineCellSet], target: info.insideCells,
                   text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} kan al zijn sterren buiten ${lineLabels} kwijt, dus binnen ${lineLabels} zet die regio niks — dat wordt allemaal kruisjes.`,
+                  regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
               }
               if (info.minInside > 0 && info.minInside === info.insideCells.length) {
@@ -954,12 +992,14 @@
                   cause: [...lineCellSet], target: info.insideCells,
                   text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} moet daarvoor ${info.minInside === 1 ? 'zijn laatste ster' : 'al zijn resterende sterren'} binnen ${lineLabels} plaatsen, en dat kan alleen als ${info.insideCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${info.insideCells.length === 1 ? 'is' : 'zijn'}.`,
                   place: true,
+                  regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
               }
               if (maxOutside === 0 && info.outsideCells.length) {
                 consider({
                   cause: [...lineCellSet], target: info.outsideCells,
                   text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} moet daarvoor al zijn sterren binnen ${lineLabels} plaatsen, dus daarbuiten kan die regio niks meer — dat wordt allemaal kruisjes.`,
+                  regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
               }
               if (maxOutside > 0 && maxOutside === info.outsideCells.length) {
@@ -967,6 +1007,7 @@
                   cause: [...lineCellSet], target: info.outsideCells,
                   text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. Dat betekent dat ${info.regionUnit.label} buiten ${lineLabels} nog ${maxOutside === 1 ? '1 ster' : `${maxOutside} sterren`} moet plaatsen, en dat kan alleen als ${info.outsideCells.length === 1 ? 'die ene cel' : 'al die cellen'} daar een ster ${info.outsideCells.length === 1 ? 'is' : 'zijn'}.`,
                   place: true,
+                  regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
               }
             }
@@ -990,6 +1031,7 @@
         }
         hintCause = new Set(hint.cause);
         hintNew = new Set(hint.target);
+        hintRegions = new Set(hint.regions || []);
         hintBox.hidden = false;
         hintBox.innerHTML = `<strong>Hint</strong>${hint.text}`;
         render();
@@ -1000,6 +1042,7 @@
       // revealing a solution cell, say so and leave the board untouched.
       hintCause = new Set();
       hintNew = new Set();
+      hintRegions = new Set();
       hintBox.hidden = false;
       const alreadySolved = [...solutionStars].every(k => stars.has(k));
       hintBox.innerHTML = alreadySolved
