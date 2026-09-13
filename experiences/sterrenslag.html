@@ -238,7 +238,7 @@
     let n, regionCells, cellRegion, solutionStars, stars, marks, userColors, cellEls;
     let hintNew = new Set(), hintCause = new Set();
     let colorMode = false;
-    let history = [];
+    let moveHistory = [];
 
     const board = document.getElementById('board');
     const colcounts = document.getElementById('colcounts');
@@ -254,19 +254,19 @@
     const undoBtn = document.getElementById('undoBtn');
 
     function pushHistory() {
-      history.push({ stars: [...stars], marks: [...marks], userColors: [...userColors] });
-      if (history.length > 200) history.shift();
+      moveHistory.push({ stars: [...stars], marks: [...marks], userColors: [...userColors] });
+      if (moveHistory.length > 200) moveHistory.shift();
       undoBtn.disabled = false;
     }
 
     function undo() {
-      const prev = history.pop();
+      const prev = moveHistory.pop();
       if (!prev) return;
       stars = new Set(prev.stars);
       marks = new Set(prev.marks);
       userColors = new Set(prev.userColors);
       clearHint();
-      undoBtn.disabled = history.length === 0;
+      undoBtn.disabled = moveHistory.length === 0;
       render();
     }
     undoBtn.addEventListener('click', undo);
@@ -289,7 +289,7 @@
       userColors = new Set();
       hintNew = new Set();
       hintCause = new Set();
-      history = [];
+      moveHistory = [];
       undoBtn.disabled = true;
       cellRegion = {};
       for (const [reg, cells] of Object.entries(regionCells)) {
@@ -298,6 +298,9 @@
 
       titleEl.textContent = `Sterrenslag ${p.label}`;
       legendTitle.textContent = `Regio's (${Object.keys(regionCells).length})`;
+      const url = new URL(location.href);
+      url.searchParams.set('puzzle', id);
+      history.replaceState(null, '', url);
       const metaParts = [];
       if (p.date) metaParts.push(`Datum: ${p.date}`);
       if (p.source) metaParts.push(`Bron: <a href="${p.source.url}" target="_blank" rel="noopener">${p.source.name}</a>`);
@@ -714,7 +717,11 @@
 
     document.getElementById('hintBtn').addEventListener('click', applyHint);
 
-    loadPuzzle(Object.keys(puzzles)[0]);
+    const startParams = new URLSearchParams(location.search);
+    const requestedId = startParams.get('puzzle');
+    const startId = (requestedId && puzzles[requestedId]) ? requestedId : Object.keys(puzzles)[0];
+    picker.value = startId;
+    loadPuzzle(startId);
   </script>
 </body>
 </html>
