@@ -586,29 +586,71 @@
         }
       }
 
-      // Rule 4: if all remaining candidates of a region sit in a single
-      // row/column, and that row/column needs exactly as many stars as
-      // the region still needs, the rest of that row/column is empty (X).
+      // Rule 4: if the combined remaining candidates of a set of k regions
+      // sit only in k rows (or only in k columns), and those k regions
+      // together need exactly as many stars as those k rows/columns still
+      // need, then every star in those lines must come from this region
+      // set — any other cell in those lines is a cross. k=1 is the simple
+      // "one region confined to one line" case; k=2/3 catches combinations
+      // where no single region alone is confined, but a small group is.
       const regionUnits = units.filter(u => u.kind === 'regio');
-      const lineUnits = units.filter(u => u.kind !== 'regio');
-      for (const region of regionUnits) {
-        const { unknown: regUnknown, remaining: regRemaining } = unitState(region);
-        if (!regUnknown.length || regRemaining <= 0) continue;
-        const rows = new Set(regUnknown.map(k => k.split(',')[0]));
-        const cols = new Set(regUnknown.map(k => k.split(',')[1]));
-        for (const [dim, ids] of [['rij', rows], ['kolom', cols]]) {
-          if (ids.size !== 1) continue;
-          const id = [...ids][0];
-          const line = lineUnits.find(u => u.kind === dim && u.label === `${dim} ${id}`);
-          if (!line) continue;
-          const { unknown: lineUnknown, remaining: lineRemaining } = unitState(line);
-          if (lineRemaining !== regRemaining) continue;
-          const outside = lineUnknown.filter(k => !regUnknown.includes(k));
-          if (outside.length) {
-            return {
-              cause: regUnknown, target: outside,
-              text: `De resterende ${regRemaining === 1 ? 'ster' : 'sterren'} van ${region.label} passen alleen nog in ${dim} ${id}. Daarmee zit ${dim} ${id} al vol met sterren uit die regio, dus de rest van ${dim} ${id} wordt kruisjes.`,
-            };
+      const rowUnits = units.filter(u => u.kind === 'rij');
+      const colUnits = units.filter(u => u.kind === 'kolom');
+      const activeRegions = regionUnits.filter(u => unitState(u).remaining > 0);
+
+      function combinations(arr, k) {
+        const result = [];
+        const combo = [];
+        (function backtrack(start) {
+          if (combo.length === k) { result.push(combo.slice()); return; }
+          for (let i = start; i < arr.length; i++) {
+            combo.push(arr[i]);
+            backtrack(i + 1);
+            combo.pop();
+          }
+        })(0);
+        return result;
+      }
+
+      for (let k = 1; k <= Math.min(3, activeRegions.length); k++) {
+        for (const regionCombo of combinations(activeRegions, k)) {
+          const unionCells = new Set();
+          let regRemainingSum = 0;
+          for (const region of regionCombo) {
+            const { unknown, remaining } = unitState(region);
+            regRemainingSum += remaining;
+            for (const cell of unknown) unionCells.add(cell);
+          }
+          if (!unionCells.size) continue;
+
+          for (const [dim, lineUnitsList] of [['rij', rowUnits], ['kolom', colUnits]]) {
+            const idx = dim === 'rij' ? 0 : 1;
+            const ids = new Set([...unionCells].map(cell => cell.split(',')[idx]));
+            if (ids.size !== k) continue;
+            const lines = lineUnitsList.filter(l => ids.has(l.label.split(' ')[1]));
+            if (lines.length !== k) continue;
+
+            let lineRemainingSum = 0;
+            for (const line of lines) lineRemainingSum += unitState(line).remaining;
+            if (lineRemainingSum !== regRemainingSum) continue;
+
+            const outside = [];
+            for (const line of lines) {
+              for (const cell of line.cells) {
+                if (!stars.has(cell) && !marks.has(cell) && !unionCells.has(cell)) outside.push(cell);
+              }
+            }
+            if (outside.length) {
+              const regionLabels = regionCombo.map(r => r.label).join(', ');
+              const lineLabels = lines.map(l => l.label).join(', ');
+              const dimWord = dim === 'rij' ? (k === 1 ? 'rij' : 'rijen') : (k === 1 ? 'kolom' : 'kolommen');
+              return {
+                cause: [...unionCells], target: outside,
+                text: k === 1
+                  ? `De resterende ${regRemainingSum === 1 ? 'ster' : 'sterren'} van ${regionLabels} passen alleen nog in ${lineLabels}. Daarmee zit ${lineLabels} al vol met sterren uit die regio, dus de rest van ${lineLabels} wordt kruisjes.`
+                  : `${capitalize(regionLabels)} hebben samen nog ${regRemainingSum} sterren nodig, en die passen alleen nog in ${lineLabels} (${k} ${dimWord}). Dus die ${dimWord} zitten straks vol met sterren uit deze regio's — de rest wordt kruisjes.`,
+              };
+            }
           }
         }
       }
