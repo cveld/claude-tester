@@ -111,7 +111,19 @@
     .cell[data-bl="1"] { border-left: 3px solid var(--line-strong); }
     .cell[data-bt="1"] { border-top: 3px solid var(--line-strong); }
 
-    .toolbar { display: flex; gap: .6rem; flex-wrap: wrap; max-width: min(480px, 88vw); }
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .5rem;
+      max-width: min(480px, 88vw);
+    }
+    .toolbar .btn {
+      justify-content: center;
+      text-align: center;
+      padding-left: .6rem;
+      padding-right: .6rem;
+      white-space: normal;
+    }
 
     .hint-box {
       border-radius: var(--radius);
@@ -179,12 +191,12 @@
       </div>
 
       <aside>
+        <div class="hint-box" id="hintBox" hidden></div>
+
         <div class="status" id="status">
           <strong>0 sterren geplaatst</strong>
           Elke rij, kolom en regio heeft er 2 nodig.
         </div>
-
-        <div class="hint-box" id="hintBox" hidden></div>
 
         <div class="legend">
           <h2 id="legend-title">Regio's</h2>
