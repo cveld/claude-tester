@@ -764,15 +764,41 @@
         }
       }
 
-      // Rule 6: within a group of k rows (or k columns), some regions may
-      // be fully confined to those lines (every remaining candidate they
-      // have lies inside), so they're guaranteed to place their whole
-      // remaining star count there. If the lines need more stars in total
-      // than those confined regions can supply, the shortfall has to come
-      // from the "protruding" cells of other regions that only partially
-      // overlap these lines. When the number of those protruding cells
-      // exactly matches the shortfall, every one of them must be a star —
-      // there's no slack left to leave any of them empty.
+      // Rule 6: split every region touching a group of k rows (or k
+      // columns) into the cells it has inside that group and the cells
+      // it has outside. A region can place at most as many stars on
+      // either side as that side's own layout allows — capped both by
+      // how many stars the region has left, and by how many of that
+      // side's cells can hold non-touching stars at once. That gives a
+      // guaranteed MINIMUM number of stars every region must place
+      // inside the group (its remaining stars minus the most it could
+      // possibly place outside). If those minimums add up to exactly
+      // what the lines still need, no region can exceed its minimum —
+      // there's no room left. That can force a region's entire inside
+      // share to be crosses (minimum 0), all of it to be stars (minimum
+      // equals every inside cell), or force the region's OUTSIDE cells
+      // the same way.
+      const INDEP_CAP = 10;
+      function maxIndependentSet(cells, cap) {
+        let best = 0;
+        (function backtrack(idx, chosen) {
+          if (chosen.length > best) best = chosen.length;
+          if (best >= cap || idx >= cells.length) return;
+          if (chosen.every(c => !isAdjacent(c, cells[idx]))) {
+            chosen.push(cells[idx]);
+            backtrack(idx + 1, chosen);
+            chosen.pop();
+          }
+          backtrack(idx + 1, chosen);
+        })(0, []);
+        return best;
+      }
+      function maxAchievable(cells, remaining) {
+        if (!cells.length || remaining <= 0) return 0;
+        if (cells.length > INDEP_CAP) return Math.min(remaining, cells.length);
+        return Math.min(remaining, maxIndependentSet(cells, remaining));
+      }
+
       for (const [dim, lineUnitsList] of [['rij', rowUnits], ['kolom', colUnits]]) {
         const activeLines = lineUnitsList.filter(u => unitState(u).remaining > 0);
         for (let k = 1; k <= activeLines.length; k++) {
@@ -793,212 +819,51 @@
               byRegion.get(reg).push(cell);
             }
 
-            let guaranteed = 0;
-            const protruding = []; // { reg, cellsInside, regRemaining }
-            for (const [reg, cellsInside] of byRegion) {
+            const regionInfo = [];
+            let guaranteedSum = 0;
+            for (const [reg, insideCells] of byRegion) {
               const regionUnit = regionUnits.find(r => r.label.split(' ')[1] === reg);
               const { unknown: regUnknown, remaining: regRemaining } = unitState(regionUnit);
               if (regRemaining <= 0) continue;
-              const fullyContained = regUnknown.length === cellsInside.length;
-              if (fullyContained) {
-                guaranteed += regRemaining;
-              } else {
-                protruding.push({ reg, cellsInside, regRemaining });
-              }
+              const outsideCells = regUnknown.filter(c => !lineCellSet.has(c));
+              const maxOutside = maxAchievable(outsideCells, regRemaining);
+              const minInside = regRemaining - maxOutside;
+              guaranteedSum += minInside;
+              regionInfo.push({ regionUnit, insideCells, outsideCells, regRemaining, minInside });
             }
+            if (guaranteedSum !== totalNeed) continue;
 
-            const deficit = totalNeed - guaranteed;
-            if (deficit <= 0 || !protruding.length) continue;
-
-            const allCells = protruding.flatMap(p => p.cellsInside);
-
-            // Case A: every protruding region could in principle supply
-            // all of its inside cells as stars (cellsInside <= its own
-            // remaining), and together they have exactly as many cells as
-            // the shortfall — so all of them must be stars.
-            const allSafe = protruding.every(p => p.cellsInside.length <= p.regRemaining);
-            if (allSafe && allCells.length === deficit) {
-              const lineLabels = lineCombo.map(l => l.label).join(', ');
-              return {
-                cause: [...lineCellSet], target: allCells,
-                text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig. De regio's die daar volledig binnen vallen kunnen er samen maar ${guaranteed} leveren, dus ${deficit === 1 ? 'moet er nog 1 ster' : `moeten er nog ${deficit} sterren`} bij de uitstekende cellen van de andere regio's vandaan komen — en dat kan alleen als ${allCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${allCells.length === 1 ? 'is' : 'zijn'}.`,
-                place: true,
-              };
-            }
-
-            // Case B: isolate one protruding region at a time. If the
-            // shortfall exceeds what every *other* protruding region could
-            // maximally supply, this region alone must cover the gap —
-            // regardless of how big its own protrusion is.
-            for (const p of protruding) {
-              const maxOthers = protruding
-                .filter(o => o !== p)
-                .reduce((sum, o) => sum + Math.min(o.regRemaining, o.cellsInside.length), 0);
-              const localDeficit = deficit - maxOthers;
-              if (localDeficit <= 0) continue;
-
-              const regionLabel = regionUnits.find(r => r.label.split(' ')[1] === p.reg).label;
-              if (p.cellsInside.length === localDeficit) {
-                const lineLabels = lineCombo.map(l => l.label).join(', ');
+            const lineLabels = lineCombo.map(l => l.label).join(', ');
+            for (const info of regionInfo) {
+              const maxOutside = info.regRemaining - info.minInside;
+              if (info.minInside === 0 && info.insideCells.length) {
                 return {
-                  cause: [...lineCellSet], target: p.cellsInside,
-                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en zonder ${regionLabel} kunnen alle andere regio's samen er hoogstens ${guaranteed + maxOthers} leveren. ${capitalize(regionLabel)} moet dus zelf nog ${localDeficit === 1 ? '1 ster' : `${localDeficit} sterren`} bijdragen binnen ${lineLabels}, en dat kan alleen als ${p.cellsInside.length === 1 ? 'die ene cel' : 'al die cellen'} van ${regionLabel} daar een ster ${p.cellsInside.length === 1 ? 'is' : 'zijn'}.`,
+                  cause: [...lineCellSet], target: info.insideCells,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} kan al zijn sterren buiten ${lineLabels} kwijt, dus binnen ${lineLabels} zet die regio niks — dat wordt allemaal kruisjes.`,
+                };
+              }
+              if (info.minInside > 0 && info.minInside === info.insideCells.length) {
+                return {
+                  cause: [...lineCellSet], target: info.insideCells,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} moet daarvoor ${info.minInside === 1 ? 'zijn laatste ster' : 'al zijn resterende sterren'} binnen ${lineLabels} plaatsen, en dat kan alleen als ${info.insideCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${info.insideCells.length === 1 ? 'is' : 'zijn'}.`,
                   place: true,
                 };
               }
-
-              // Same idea, but the protrusion is bigger than what's
-              // forced — so find cells that touch every one of this
-              // region's inside cells, which must then be crosses.
-              const insideSet = new Set(p.cellsInside);
-              const candidateCrosses = [];
-              const [fr, fc] = p.cellsInside[0].split(',').map(Number);
-              for (let dr = -1; dr <= 1; dr++) {
-                for (let dc = -1; dc <= 1; dc++) {
-                  if (dr === 0 && dc === 0) continue;
-                  const rr = fr + dr, cc = fc + dc;
-                  if (rr < 1 || rr > n || cc < 1 || cc > n) continue;
-                  const cand = key(rr, cc);
-                  if (stars.has(cand) || marks.has(cand) || insideSet.has(cand)) continue;
-                  if (p.cellsInside.every(pc => isAdjacent(cand, pc))) candidateCrosses.push(cand);
-                }
-              }
-              if (candidateCrosses.length) {
-                const lineLabels = lineCombo.map(l => l.label).join(', ');
+              if (maxOutside === 0 && info.outsideCells.length) {
                 return {
-                  cause: [...lineCellSet], target: candidateCrosses,
-                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en zonder ${regionLabel} kunnen de andere regio's samen er hoogstens ${guaranteed + maxOthers} leveren. Dus moet ${regionLabel} zelf nog ${localDeficit === 1 ? 'minstens 1 ster' : `minstens ${localDeficit} sterren`} bijdragen binnen ${lineLabels}. Waar precies staat nog niet vast, maar ${candidateCrosses.length === 1 ? 'deze cel raakt' : 'deze cellen raken'} alle kandidaatcellen van ${regionLabel} daar, dus ${candidateCrosses.length === 1 ? 'die cel wordt' : 'die worden'} een kruisje${candidateCrosses.length === 1 ? '' : 's'}.`,
+                  cause: [...lineCellSet], target: info.outsideCells,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} moet daarvoor al zijn sterren binnen ${lineLabels} plaatsen, dus daarbuiten kan die regio niks meer — dat wordt allemaal kruisjes.`,
+                };
+              }
+              if (maxOutside > 0 && maxOutside === info.outsideCells.length) {
+                return {
+                  cause: [...lineCellSet], target: info.outsideCells,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. Dat betekent dat ${info.regionUnit.label} buiten ${lineLabels} nog ${maxOutside === 1 ? '1 ster' : `${maxOutside} sterren`} moet plaatsen, en dat kan alleen als ${info.outsideCells.length === 1 ? 'die ene cel' : 'al die cellen'} daar een ster ${info.outsideCells.length === 1 ? 'is' : 'zijn'}.`,
+                  place: true,
                 };
               }
             }
           }
-        }
-      }
-
-      // Rule 7: for a row, column or region with only a handful of
-      // remaining candidate cells, try every valid (non-adjacent)
-      // placement of its remaining stars, and for each one check whether
-      // the rest of the board can still be completed at all (a full
-      // backtracking search, not just simple propagation — some
-      // contradictions only show up several moves later). Whatever is
-      // true in EVERY placement that still allows a full completion is
-      // forced: a cell that's a star in all of them must be a star; a
-      // candidate that's a star in NONE of them must be a cross. This
-      // also covers a region that already has one star: with only one
-      // star left to place, each "placement" is a single cell, so any
-      // candidate that dead-ends becomes a cross even if others survive.
-      const CANDIDATE_CAP = 6;
-
-      function isCompletable(hypStars, hypCrosses) {
-        const fixedMarks = new Set(marks);
-        for (const c of hypCrosses) fixedMarks.add(c);
-        const placed = new Set(stars);
-        for (const c of hypStars) placed.add(c);
-
-        const placedArr = [...placed];
-        for (let i = 0; i < placedArr.length; i++) {
-          for (let j = i + 1; j < placedArr.length; j++) {
-            if (isAdjacent(placedArr[i], placedArr[j])) return false;
-          }
-        }
-        const colCount = {}, regCount = {};
-        for (const s of placed) {
-          const [, c] = s.split(',').map(Number);
-          colCount[c] = (colCount[c] || 0) + 1;
-          const reg = cellRegion[s];
-          regCount[reg] = (regCount[reg] || 0) + 1;
-          if (colCount[c] > 2 || regCount[reg] > 2) return false;
-        }
-        for (let r = 1; r <= n; r++) {
-          if (placedArr.filter(s => Number(s.split(',')[0]) === r).length > 2) return false;
-        }
-
-        function rowStarsIn(r) {
-          const res = [];
-          for (const s of placed) {
-            const [rr, cc] = s.split(',').map(Number);
-            if (rr === r) res.push(cc);
-          }
-          return res;
-        }
-
-        function backtrack(row) {
-          if (row > n) return true;
-          const existing = rowStarsIn(row);
-          const need = 2 - existing.length;
-          if (need === 0) return backtrack(row + 1);
-
-          const candidates = [];
-          for (let c = 1; c <= n; c++) {
-            const k = key(row, c);
-            if (placed.has(k) || fixedMarks.has(k)) continue;
-            candidates.push(c);
-          }
-          for (const combo of combinations(candidates, need)) {
-            let ok = combo.every((a, i) => combo.slice(i + 1).every(b => Math.abs(a - b) > 1));
-            if (ok) ok = combo.every(c => existing.every(e => Math.abs(c - e) > 1));
-            if (ok) {
-              for (const c of combo) {
-                const k = key(row, c);
-                for (const p of placed) if (isAdjacent(k, p)) { ok = false; break; }
-                if (!ok) break;
-              }
-            }
-            if (!ok) continue;
-            const added = [];
-            let capOk = true;
-            for (const c of combo) {
-              const k = key(row, c);
-              const reg = cellRegion[k];
-              colCount[c] = (colCount[c] || 0) + 1;
-              regCount[reg] = (regCount[reg] || 0) + 1;
-              if (colCount[c] > 2 || regCount[reg] > 2) capOk = false;
-              placed.add(k);
-              added.push([k, c, reg]);
-            }
-            if (capOk && backtrack(row + 1)) return true;
-            for (const [k, c, reg] of added) {
-              placed.delete(k);
-              colCount[c]--;
-              regCount[reg]--;
-            }
-          }
-          return false;
-        }
-
-        return backtrack(1);
-      }
-
-      for (const unit of units) {
-        const { unknown, remaining } = unitState(unit);
-        if (remaining <= 0 || unknown.length <= remaining) continue; // rule 3 already covers this
-        if (unknown.length > CANDIDATE_CAP) continue; // keep the search bounded
-
-        const placements = combinations(unknown, remaining)
-          .filter(combo => combo.every((a, i) => combo.slice(i + 1).every(b => !isAdjacent(a, b))));
-        if (placements.length <= 1) continue;
-
-        const feasible = placements.filter(combo => {
-          const crosses = unknown.filter(c => !combo.includes(c));
-          return isCompletable(combo, crosses);
-        });
-        if (!feasible.length || feasible.length === placements.length) continue;
-
-        const forcedStars = unknown.filter(c => feasible.every(combo => combo.includes(c)));
-        const forcedCrosses = unknown.filter(c => feasible.every(combo => !combo.includes(c)));
-
-        if (forcedStars.length) {
-          return {
-            cause: unit.cells.filter(c => stars.has(c)), target: forcedStars,
-            text: `Ik heb alle geldige manieren bekeken om de ${remaining === 1 ? 'ster' : `${remaining} sterren`} van ${unit.label} te plaatsen: ${placements.length} in totaal, maar maar ${feasible.length} daarvan botsen nergens anders op het bord. ${forcedStars.length === 1 ? 'In elk van die geldige mogelijkheden staat op deze cel een ster' : 'In elk van die geldige mogelijkheden staan op deze cellen sterren'}, dus dat moet wel kloppen.`,
-            place: true,
-          };
-        }
-        if (forcedCrosses.length) {
-          return {
-            cause: unit.cells.filter(c => stars.has(c)), target: forcedCrosses,
-            text: `Ik heb alle geldige manieren bekeken om de ${remaining === 1 ? 'ster' : `${remaining} sterren`} van ${unit.label} te plaatsen: ${placements.length} in totaal, maar maar ${feasible.length} daarvan botsen nergens anders op het bord. In geen van die geldige mogelijkheden ${forcedCrosses.length === 1 ? 'staat op deze cel' : 'staan op deze cellen'} een ster, dus ${forcedCrosses.length === 1 ? 'wordt die' : 'worden die'} een kruisje${forcedCrosses.length === 1 ? '' : 's'}.`,
-          };
         }
       }
 
