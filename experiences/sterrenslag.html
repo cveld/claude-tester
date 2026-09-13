@@ -143,7 +143,7 @@
 
   <main class="experience">
     <h1 id="title">Sterrenslag</h1>
-    <p class="note">Klik op een cel om te wisselen tussen leeg, ster en kruisje (×). Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
+    <p class="note">Klik op een cel om te wisselen tussen leeg, kruisje (×) en ster. Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
 
     <div class="puzzle-select">
       <label for="puzzlePicker">Puzzel:</label>
@@ -318,9 +318,9 @@
 
     function toggle(r, c) {
       const k = `${r},${c}`;
-      if (stars.has(k)) { stars.delete(k); marks.add(k); }
-      else if (marks.has(k)) { marks.delete(k); }
-      else { stars.add(k); }
+      if (marks.has(k)) { marks.delete(k); stars.add(k); }
+      else if (stars.has(k)) { stars.delete(k); }
+      else { marks.add(k); }
       clearHint();
       render();
     }
