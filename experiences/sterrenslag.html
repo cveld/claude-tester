@@ -33,6 +33,11 @@
 
     .board-col { display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; }
 
+    .puzzle-select { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .puzzle-select select {
+      font: inherit; padding: .35rem .6rem; border-radius: 6px; border: 1px solid var(--line);
+    }
+
     .board-grid {
       display: grid;
       grid-template-columns: auto 1fr;
@@ -40,8 +45,8 @@
       width: min(480px, 88vw);
       gap: .3rem;
     }
-    .colcounts { grid-column: 2; grid-row: 1; display: grid; grid-template-columns: repeat(11, 1fr); }
-    .rowcounts { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(11, 1fr); }
+    .colcounts { grid-column: 2; grid-row: 1; display: grid; }
+    .rowcounts { grid-column: 1; grid-row: 2; display: grid; }
     .count {
       display: flex; align-items: center; justify-content: center;
       font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -54,7 +59,6 @@
     .board {
       grid-column: 2; grid-row: 2;
       display: grid;
-      grid-template-columns: repeat(11, 1fr);
       aspect-ratio: 1;
       border: 3px solid var(--line-strong);
       border-radius: 6px;
@@ -118,8 +122,13 @@
   </header>
 
   <main class="experience">
-    <h1>Sterrenslag 11×11</h1>
+    <h1 id="title">Sterrenslag</h1>
     <p class="note">Klik op een cel om een ster te zetten of weg te halen. Elke rij, kolom en regio heeft precies 2 sterren nodig, en sterren mogen elkaar niet aanraken (ook niet diagonaal).</p>
+
+    <div class="puzzle-select">
+      <label for="puzzlePicker">Puzzel:</label>
+      <select id="puzzlePicker"></select>
+    </div>
 
     <div class="board-layout">
       <div class="board-col">
@@ -136,12 +145,12 @@
 
       <aside>
         <div class="status" id="status">
-          <strong>0 / 22 sterren geplaatst</strong>
+          <strong>0 sterren geplaatst</strong>
           Elke rij, kolom en regio heeft er 2 nodig.
         </div>
 
         <div class="legend">
-          <h2>Regio's (11)</h2>
+          <h2 id="legend-title">Regio's</h2>
           <div id="legend-list"></div>
         </div>
       </aside>
@@ -149,75 +158,128 @@
   </main>
 
   <script>
-    const regionCells = {
-      A: [[4,1],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10],[4,11],[5,1],[5,3],[5,5],[5,9],[5,10],[5,11],[6,1],[6,3],[6,5],[6,6],[6,7],[6,9],[6,10],[6,11],[7,1],[7,3],[7,7],[7,9],[7,11],[8,1],[8,2],[8,3],[8,5],[8,6],[8,7],[8,9],[8,11]],
-      B: [[1,1],[1,2],[1,3],[1,4],[2,1],[2,2],[2,4],[2,6],[3,1],[3,4],[3,5],[3,6],[3,7],[3,8],[3,9]],
-      C: [[8,4],[9,2],[9,3],[9,4],[9,5],[10,2],[10,3],[10,5],[10,6],[10,7]],
-      D: [[5,6],[5,7],[5,8],[6,8],[7,8],[8,8],[9,6],[9,7],[9,8]],
-      E: [[9,1],[10,1],[10,4],[11,1],[11,2],[11,3],[11,4],[11,5],[11,6]],
-      F: [[1,5],[1,6],[1,7],[1,8],[1,9],[1,10],[2,5],[2,7]],
-      G: [[1,11],[2,8],[2,9],[2,10],[2,11],[3,10],[3,11]],
-      H: [[2,3],[3,2],[3,3],[4,2],[5,2],[6,2],[7,2]],
-      I: [[7,10],[8,10],[9,9],[9,10],[9,11],[10,10],[10,11]],
-      J: [[10,8],[10,9],[11,7],[11,8],[11,9],[11,10],[11,11]],
-      K: [[5,4],[6,4],[7,4],[7,5],[7,6]],
+    const puzzles = {
+      p11: {
+        label: '11×11',
+        n: 11,
+        regionCells: {
+          A: [[4,1],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10],[4,11],[5,1],[5,3],[5,5],[5,9],[5,10],[5,11],[6,1],[6,3],[6,5],[6,6],[6,7],[6,9],[6,10],[6,11],[7,1],[7,3],[7,7],[7,9],[7,11],[8,1],[8,2],[8,3],[8,5],[8,6],[8,7],[8,9],[8,11]],
+          B: [[1,1],[1,2],[1,3],[1,4],[2,1],[2,2],[2,4],[2,6],[3,1],[3,4],[3,5],[3,6],[3,7],[3,8],[3,9]],
+          C: [[8,4],[9,2],[9,3],[9,4],[9,5],[10,2],[10,3],[10,5],[10,6],[10,7]],
+          D: [[5,6],[5,7],[5,8],[6,8],[7,8],[8,8],[9,6],[9,7],[9,8]],
+          E: [[9,1],[10,1],[10,4],[11,1],[11,2],[11,3],[11,4],[11,5],[11,6]],
+          F: [[1,5],[1,6],[1,7],[1,8],[1,9],[1,10],[2,5],[2,7]],
+          G: [[1,11],[2,8],[2,9],[2,10],[2,11],[3,10],[3,11]],
+          H: [[2,3],[3,2],[3,3],[4,2],[5,2],[6,2],[7,2]],
+          I: [[7,10],[8,10],[9,9],[9,10],[9,11],[10,10],[10,11]],
+          J: [[10,8],[10,9],[11,7],[11,8],[11,9],[11,10],[11,11]],
+          K: [[5,4],[6,4],[7,4],[7,5],[7,6]],
+        },
+        solutionStars: ["1,3","1,5","2,7","2,9","3,5","3,11","4,2","4,8","5,6","5,10","6,2","6,4","7,6","7,10","8,4","8,8","9,1","9,11","10,3","10,9","11,1","11,7"],
+      },
+      p9: {
+        label: '9×9',
+        n: 9,
+        regionCells: {
+          A: [[1,1],[1,2],[1,3],[1,4],[2,1],[2,4],[3,3],[3,4],[4,2],[4,3],[4,4],[5,2],[5,4]],
+          B: [[1,5],[2,5],[3,5],[3,6],[4,5],[4,6],[5,5],[5,6]],
+          C: [[1,6],[1,7],[1,8],[1,9],[2,6],[2,7],[2,8],[2,9]],
+          D: [[2,2],[2,3],[3,1],[3,2],[4,1],[5,1],[5,3],[6,1],[6,2],[6,3]],
+          E: [[3,7],[3,8],[3,9],[4,7],[4,9],[5,9],[6,8],[6,9],[7,7],[7,8]],
+          F: [[4,8],[5,7],[5,8],[6,6],[6,7]],
+          G: [[6,4],[6,5],[7,4],[7,5],[8,4],[8,5],[9,4],[9,5]],
+          H: [[7,1],[7,2],[7,3],[8,1],[8,2],[8,3],[9,1],[9,2],[9,3]],
+          I: [[7,6],[7,9],[8,6],[8,7],[8,8],[8,9],[9,6],[9,7],[9,8],[9,9]],
+        },
+        solutionStars: ["1,3","1,7","2,5","2,9","3,1","3,7","4,3","4,5","5,1","5,8","6,4","6,6","7,2","7,8","8,4","8,6","9,2","9,9"],
+      },
     };
-    const solutionStars = new Set(["1,3","1,5","2,7","2,9","3,5","3,11","4,2","4,8","5,6","5,10","6,2","6,4","7,6","7,10","8,4","8,8","9,1","9,11","10,3","10,9","11,1","11,7"]);
 
-    const n = 11;
-    const cellRegion = {};
-    for (const [reg, cells] of Object.entries(regionCells)) {
-      for (const [r, c] of cells) cellRegion[`${r},${c}`] = reg;
-    }
-
-    let stars = new Set();
+    let n, regionCells, cellRegion, solutionStars, stars, cellEls;
 
     const board = document.getElementById('board');
     const colcounts = document.getElementById('colcounts');
     const rowcounts = document.getElementById('rowcounts');
     const legend = document.getElementById('legend-list');
+    const legendTitle = document.getElementById('legend-title');
     const statusEl = document.getElementById('status');
+    const titleEl = document.getElementById('title');
+    const picker = document.getElementById('puzzlePicker');
 
-    const cellEls = {};
-    for (let r = 1; r <= n; r++) {
-      for (let c = 1; c <= n; c++) {
-        const div = document.createElement('div');
-        const reg = cellRegion[`${r},${c}`];
-        div.className = 'cell';
-        div.style.background = `var(--r${reg})`;
-        if (cellRegion[`${r},${c+1}`] !== reg) div.dataset.br = "1";
-        if (cellRegion[`${r+1},${c}`] !== reg && r < n) div.dataset.bb = "1";
-        if (c === 1 || cellRegion[`${r},${c-1}`] !== reg) div.dataset.bl = "1";
-        if (r === 1 || cellRegion[`${r-1},${c}`] !== reg) div.dataset.bt = "1";
-        div.addEventListener('click', () => toggle(r, c));
-        div.setAttribute('role', 'button');
-        div.setAttribute('aria-label', `rij ${r}, kolom ${c}`);
-        board.appendChild(div);
-        cellEls[`${r},${c}`] = div;
+    for (const [id, p] of Object.entries(puzzles)) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = `${p.label} (${p.n * 2} sterren)`;
+      picker.appendChild(opt);
+    }
+    picker.addEventListener('change', () => loadPuzzle(picker.value));
+
+    function loadPuzzle(id) {
+      const p = puzzles[id];
+      n = p.n;
+      regionCells = p.regionCells;
+      solutionStars = new Set(p.solutionStars);
+      stars = new Set();
+      cellRegion = {};
+      for (const [reg, cells] of Object.entries(regionCells)) {
+        for (const [r, c] of cells) cellRegion[`${r},${c}`] = reg;
       }
-    }
-    for (let c = 1; c <= n; c++) {
-      const d = document.createElement('div'); d.className = 'count'; d.id = `col-${c}`;
-      colcounts.appendChild(d);
-    }
-    for (let r = 1; r <= n; r++) {
-      const d = document.createElement('div'); d.className = 'count'; d.id = `row-${r}`;
-      rowcounts.appendChild(d);
-    }
 
-    const regionSizes = {};
-    for (const [reg, cells] of Object.entries(regionCells)) regionSizes[reg] = cells.length;
-    for (const reg of Object.keys(regionCells).sort()) {
-      const row = document.createElement('div');
-      row.className = 'legend-row';
-      row.id = `legend-${reg}`;
-      row.innerHTML = `<span class="swatch" style="background:var(--r${reg})"></span><span>Regio ${reg} — ${regionSizes[reg]} cellen</span><span class="cnt" id="regcnt-${reg}">0/2</span>`;
-      legend.appendChild(row);
+      titleEl.textContent = `Sterrenslag ${p.label}`;
+      legendTitle.textContent = `Regio's (${Object.keys(regionCells).length})`;
+
+      board.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+      colcounts.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+      rowcounts.style.gridTemplateRows = `repeat(${n}, 1fr)`;
+
+      board.innerHTML = '';
+      colcounts.innerHTML = '';
+      rowcounts.innerHTML = '';
+      legend.innerHTML = '';
+      cellEls = {};
+
+      for (let r = 1; r <= n; r++) {
+        for (let c = 1; c <= n; c++) {
+          const div = document.createElement('div');
+          const reg = cellRegion[`${r},${c}`];
+          div.className = 'cell';
+          div.style.background = `var(--r${reg})`;
+          if (cellRegion[`${r},${c+1}`] !== reg) div.dataset.br = "1";
+          if (cellRegion[`${r+1},${c}`] !== reg && r < n) div.dataset.bb = "1";
+          if (c === 1 || cellRegion[`${r},${c-1}`] !== reg) div.dataset.bl = "1";
+          if (r === 1 || cellRegion[`${r-1},${c}`] !== reg) div.dataset.bt = "1";
+          div.addEventListener('click', () => toggle(r, c));
+          div.setAttribute('role', 'button');
+          div.setAttribute('aria-label', `rij ${r}, kolom ${c}`);
+          board.appendChild(div);
+          cellEls[`${r},${c}`] = div;
+        }
+      }
+      for (let c = 1; c <= n; c++) {
+        const d = document.createElement('div'); d.className = 'count'; d.id = `col-${c}`;
+        colcounts.appendChild(d);
+      }
+      for (let r = 1; r <= n; r++) {
+        const d = document.createElement('div'); d.className = 'count'; d.id = `row-${r}`;
+        rowcounts.appendChild(d);
+      }
+
+      const regionSizes = {};
+      for (const [reg, cells] of Object.entries(regionCells)) regionSizes[reg] = cells.length;
+      for (const reg of Object.keys(regionCells).sort()) {
+        const row = document.createElement('div');
+        row.className = 'legend-row';
+        row.id = `legend-${reg}`;
+        row.innerHTML = `<span class="swatch" style="background:var(--r${reg})"></span><span>Regio ${reg} — ${regionSizes[reg]} cellen</span><span class="cnt" id="regcnt-${reg}">0/2</span>`;
+        legend.appendChild(row);
+      }
+
+      render();
     }
 
     function toggle(r, c) {
-      const key = `${r},${c}`;
-      if (stars.has(key)) stars.delete(key); else stars.add(key);
+      const k = `${r},${c}`;
+      if (stars.has(k)) stars.delete(k); else stars.add(k);
       render();
     }
 
@@ -269,27 +331,28 @@
       }
 
       const total = stars.size;
+      const need = n * 2;
       const rowsOk = rowCount.slice(1).every(v => v === 2);
       const colsOk = colCount.slice(1).every(v => v === 2);
       const regsOk = Object.values(regCount).every(v => v === 2);
       const noConflict = conflicted.size === 0;
 
-      if (total === 22 && rowsOk && colsOk && regsOk && noConflict) {
+      if (total === need && rowsOk && colsOk && regsOk && noConflict) {
         statusEl.className = 'status good';
         statusEl.innerHTML = `<strong>Opgelost! ✓</strong>Elke rij, kolom en regio heeft precies 2 sterren, en geen enkele raakt een andere aan.`;
       } else if (conflicted.size > 0) {
         statusEl.className = 'status bad';
-        statusEl.innerHTML = `<strong>${total} / 22 sterren geplaatst</strong>Twee sterren raken elkaar aan (rood) — dat mag niet, ook niet diagonaal.`;
+        statusEl.innerHTML = `<strong>${total} / ${need} sterren geplaatst</strong>Twee sterren raken elkaar aan (rood) — dat mag niet, ook niet diagonaal.`;
       } else {
         statusEl.className = 'status';
-        statusEl.innerHTML = `<strong>${total} / 22 sterren geplaatst</strong>Elke rij, kolom en regio heeft er 2 nodig.`;
+        statusEl.innerHTML = `<strong>${total} / ${need} sterren geplaatst</strong>Elke rij, kolom en regio heeft er 2 nodig.`;
       }
     }
 
     document.getElementById('clearBtn').addEventListener('click', () => { stars = new Set(); render(); });
     document.getElementById('solveBtn').addEventListener('click', () => { stars = new Set(solutionStars); render(); });
 
-    render();
+    loadPuzzle(Object.keys(puzzles)[0]);
   </script>
 </body>
 </html>
