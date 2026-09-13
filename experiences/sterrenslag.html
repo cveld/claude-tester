@@ -603,8 +603,26 @@
         return;
       }
 
-      // Fallback: no simple logical step found, so reveal the next star
-      // from the solution instead of leaving the player stuck.
+      // Fallback: no simple logical step found. Prefer the gentler hint of
+      // ruling out a cell (a cross) over giving away a whole star; only
+      // reveal a star when every remaining unknown cell must be one.
+      let missingCross = null;
+      for (let r = 1; r <= n && !missingCross; r++) {
+        for (let c = 1; c <= n; c++) {
+          const k = key(r, c);
+          if (!stars.has(k) && !marks.has(k) && !solutionStars.has(k)) { missingCross = k; break; }
+        }
+      }
+      if (missingCross) {
+        marks.add(missingCross);
+        hintCause = new Set();
+        hintNew = new Set([missingCross]);
+        hintBox.hidden = false;
+        hintBox.innerHTML = `<strong>Hint</strong>Hier volgt geen eenvoudige regel meer uit, maar ${cellLabel(missingCross)} is in de oplossing geen ster — die cel wordt een kruisje.`;
+        render();
+        return;
+      }
+
       const missing = [...solutionStars].find(k => !stars.has(k));
       if (missing) {
         stars.add(missing);
