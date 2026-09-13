@@ -608,10 +608,16 @@
             const remaining = 2 - starCount;
             if (remaining <= 0) continue;
             const stillOpen = unit.cells.filter(k => k !== cand && !stars.has(k) && !marks.has(k) && !blocked.has(k));
-            if (stillOpen.length < remaining) {
+            // Infeasible if there's not even enough cells left, or (when 2
+            // stars are still needed) every remaining pair of candidates
+            // touches, so two non-adjacent stars can no longer fit.
+            const tooFew = stillOpen.length < remaining;
+            const noRoomForTwo = remaining === 2 && !tooFew &&
+              !stillOpen.some((a, i) => stillOpen.slice(i + 1).some(b => !isAdjacent(a, b)));
+            if (tooFew || noRoomForTwo) {
               return {
                 cause: unit.cells.filter(k => !stars.has(k) && !marks.has(k)), target: [cand],
-                text: `Als op ${cellLabel(cand)} een ster zou staan, blijven er in ${unit.label} niet genoeg cellen over voor de ${remaining === 1 ? 'ster die daar' : `${remaining} sterren die daar`} nog nodig ${remaining === 1 ? 'is' : 'zijn'} — de ster zou te veel van ${unit.kind === 'regio' ? 'die regio' : unit.kind === 'rij' ? 'die rij' : 'die kolom'} blokkeren. Dus kan hier geen ster staan — het wordt een kruisje.`,
+                text: `Als op ${cellLabel(cand)} een ster zou staan, blijven er in ${unit.label} niet genoeg cellen over die niet aan elkaar grenzen voor de ${remaining === 1 ? 'ster die daar' : `${remaining} sterren die daar`} nog nodig ${remaining === 1 ? 'is' : 'zijn'} — de ster zou te veel van ${unit.kind === 'regio' ? 'die regio' : unit.kind === 'rij' ? 'die rij' : 'die kolom'} blokkeren. Dus kan hier geen ster staan — het wordt een kruisje.`,
               };
             }
           }
