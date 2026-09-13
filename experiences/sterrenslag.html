@@ -553,6 +553,32 @@
 
       const units = getUnits();
 
+      // Shared helper: the largest set of mutually non-adjacent cells
+      // within a small cell list, capped at `cap` (search stops early
+      // once that many are found). Used by several rules below to work
+      // out how many non-touching stars a cluster of cells can actually
+      // hold, rather than just counting cells.
+      const INDEP_CAP = 10;
+      function maxIndependentSet(cells, cap) {
+        let best = 0;
+        (function backtrack(idx, chosen) {
+          if (chosen.length > best) best = chosen.length;
+          if (best >= cap || idx >= cells.length) return;
+          if (chosen.every(c => !isAdjacent(c, cells[idx]))) {
+            chosen.push(cells[idx]);
+            backtrack(idx + 1, chosen);
+            chosen.pop();
+          }
+          backtrack(idx + 1, chosen);
+        })(0, []);
+        return best;
+      }
+      function maxAchievable(cells, remaining) {
+        if (!cells.length || remaining <= 0) return 0;
+        if (cells.length > INDEP_CAP) return Math.min(remaining, cells.length);
+        return Math.min(remaining, maxIndependentSet(cells, remaining));
+      }
+
       // Rule 1: cells adjacent to an existing star must be empty (X).
       for (const s of stars) {
         const [r, c] = s.split(',').map(Number);
@@ -595,6 +621,57 @@
             text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining > 1 ? 'ren' : ''} nodig en heeft nog maar ${unknown.length === 1 ? 'één mogelijke cel' : `${unknown.length} mogelijke cellen`} over, dus daar moet${remaining === 1 ? '' : 'en'} de ster${remaining > 1 ? 'ren' : ''} staan.`,
             place: true,
           };
+        }
+      }
+
+      // Rule 3b: a unit's remaining candidates may fall apart into
+      // separate clusters of mutually-touching cells (no cell in one
+      // cluster adjacent to any cell in another). Each cluster can hold
+      // at most as many non-touching stars as its own layout allows —
+      // a lone cell holds at most 1; two touching cells also hold at
+      // most 1 between them; a longer run can hold more. If those
+      // per-cluster maximums add up to exactly how many stars the unit
+      // still needs, every cluster must hit its own maximum exactly —
+      // e.g. a 1-cell cluster next to a 2-cell (touching) cluster, with
+      // 2 stars still needed, forces a star into the 1-cell cluster and
+      // one somewhere in the 2-cell cluster.
+      for (const unit of units) {
+        const { unknown, remaining } = unitState(unit);
+        if (remaining <= 0 || unknown.length <= remaining) continue; // rule 3 already covers this
+
+        const visited = new Set();
+        const clusters = [];
+        for (const cell of unknown) {
+          if (visited.has(cell)) continue;
+          const cluster = [];
+          const stack = [cell];
+          visited.add(cell);
+          while (stack.length) {
+            const cur = stack.pop();
+            cluster.push(cur);
+            for (const other of unknown) {
+              if (!visited.has(other) && isAdjacent(cur, other)) {
+                visited.add(other);
+                stack.push(other);
+              }
+            }
+          }
+          clusters.push(cluster);
+        }
+        if (clusters.length < 2) continue;
+
+        const clusterMax = clusters.map(cl => maxAchievable(cl, remaining));
+        const sumMax = clusterMax.reduce((a, b) => a + b, 0);
+        if (sumMax !== remaining) continue;
+
+        for (let i = 0; i < clusters.length; i++) {
+          if (clusterMax[i] > 0 && clusterMax[i] === clusters[i].length) {
+            return {
+              cause: [], target: clusters[i],
+              text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. De overgebleven cellen vallen uiteen in ${clusters.length} groepjes die elkaar onderling niet raken, en door onderlinge aanraking binnen elk groepje kunnen ze samen precies ${remaining} ster${remaining === 1 ? '' : 'ren'} bevatten — geen ruimte over. ${clusters[i].length === 1 ? 'Dit groepje is maar 1 cel' : `Dit groepje van ${clusters[i].length} cellen kan door onderlinge aanraking maar ${clusterMax[i]} ster bevatten`}, dus ${clusters[i].length === 1 ? 'die cel wordt' : 'die cellen worden'} een ster.`,
+              place: true,
+            };
+          }
         }
       }
 
@@ -778,27 +855,6 @@
       // share to be crosses (minimum 0), all of it to be stars (minimum
       // equals every inside cell), or force the region's OUTSIDE cells
       // the same way.
-      const INDEP_CAP = 10;
-      function maxIndependentSet(cells, cap) {
-        let best = 0;
-        (function backtrack(idx, chosen) {
-          if (chosen.length > best) best = chosen.length;
-          if (best >= cap || idx >= cells.length) return;
-          if (chosen.every(c => !isAdjacent(c, cells[idx]))) {
-            chosen.push(cells[idx]);
-            backtrack(idx + 1, chosen);
-            chosen.pop();
-          }
-          backtrack(idx + 1, chosen);
-        })(0, []);
-        return best;
-      }
-      function maxAchievable(cells, remaining) {
-        if (!cells.length || remaining <= 0) return 0;
-        if (cells.length > INDEP_CAP) return Math.min(remaining, cells.length);
-        return Math.min(remaining, maxIndependentSet(cells, remaining));
-      }
-
       for (const [dim, lineUnitsList] of [['rij', rowUnits], ['kolom', colUnits]]) {
         const activeLines = lineUnitsList.filter(u => unitState(u).remaining > 0);
         for (let k = 1; k <= activeLines.length; k++) {
