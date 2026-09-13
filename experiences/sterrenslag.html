@@ -677,42 +677,16 @@
         return;
       }
 
-      // Fallback: no simple logical step found. Prefer the gentler hint of
-      // ruling out a cell (a cross) over giving away a whole star; only
-      // reveal a star when every remaining unknown cell must be one.
-      let missingCross = null;
-      for (let r = 1; r <= n && !missingCross; r++) {
-        for (let c = 1; c <= n; c++) {
-          const k = key(r, c);
-          if (!stars.has(k) && !marks.has(k) && !solutionStars.has(k)) { missingCross = k; break; }
-        }
-      }
-      if (missingCross) {
-        pushHistory();
-        marks.add(missingCross);
-        hintCause = new Set();
-        hintNew = new Set([missingCross]);
-        hintBox.hidden = false;
-        hintBox.innerHTML = `<strong>Hint</strong>Hier volgt geen eenvoudige regel meer uit, maar ${cellLabel(missingCross)} is in de oplossing geen ster — die cel wordt een kruisje.`;
-        render();
-        return;
-      }
-
-      const missing = [...solutionStars].find(k => !stars.has(k));
-      if (missing) {
-        pushHistory();
-        stars.add(missing);
-        marks.delete(missing);
-        hintCause = new Set();
-        hintNew = new Set([missing]);
-        hintBox.hidden = false;
-        hintBox.innerHTML = `<strong>Hint</strong>Hier volgt geen eenvoudige regel meer uit — dit is de volgende ster uit de oplossing (${cellLabel(missing)}).`;
-        render();
-        return;
-      }
-
+      // No rule found a next step. Rather than spoiling the puzzle by
+      // revealing a solution cell, say so and leave the board untouched.
+      hintCause = new Set();
+      hintNew = new Set();
       hintBox.hidden = false;
-      hintBox.innerHTML = `<strong>Hint</strong>Deze puzzel is al opgelost — er zijn geen zetten meer te doen.`;
+      const alreadySolved = [...solutionStars].every(k => stars.has(k));
+      hintBox.innerHTML = alreadySolved
+        ? `<strong>Hint</strong>Deze puzzel is al opgelost — er zijn geen zetten meer te doen.`
+        : `<strong>Hint</strong>Er is op dit moment geen kruisje of ster logisch af te leiden. Zet zelf een stap (of gebruik "Kleur" om kandidaten te markeren) en probeer daarna opnieuw.`;
+      render();
     }
 
     document.getElementById('hintBtn').addEventListener('click', applyHint);
