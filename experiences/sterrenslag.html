@@ -582,6 +582,42 @@
         }
       }
 
+      // Rule 5: if placing a star on a given cell would leave some row,
+      // column or region without enough remaining candidates for its
+      // needed stars (because the star's neighbours get eliminated), that
+      // cell can't be a star — it's a cross.
+      for (let r = 1; r <= n; r++) {
+        for (let c = 1; c <= n; c++) {
+          const cand = key(r, c);
+          if (stars.has(cand) || marks.has(cand)) continue;
+
+          const blocked = new Set();
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              if (dr === 0 && dc === 0) continue;
+              const rr = r + dr, cc = c + dc;
+              if (rr < 1 || rr > n || cc < 1 || cc > n) continue;
+              const k = key(rr, cc);
+              if (!stars.has(k)) blocked.add(k);
+            }
+          }
+
+          for (const unit of units) {
+            const starCount = unit.cells.filter(k => stars.has(k)).length + (unit.cells.includes(cand) ? 1 : 0);
+            if (starCount > 2) { continue; }
+            const remaining = 2 - starCount;
+            if (remaining <= 0) continue;
+            const stillOpen = unit.cells.filter(k => k !== cand && !stars.has(k) && !marks.has(k) && !blocked.has(k));
+            if (stillOpen.length < remaining) {
+              return {
+                cause: unit.cells.filter(k => !stars.has(k) && !marks.has(k)), target: [cand],
+                text: `Als op ${cellLabel(cand)} een ster zou staan, blijven er in ${unit.label} niet genoeg cellen over voor de ${remaining === 1 ? 'ster die daar' : `${remaining} sterren die daar`} nog nodig ${remaining === 1 ? 'is' : 'zijn'} — de ster zou te veel van ${unit.kind === 'regio' ? 'die regio' : unit.kind === 'rij' ? 'die rij' : 'die kolom'} blokkeren. Dus kan hier geen ster staan — het wordt een kruisje.`,
+              };
+            }
+          }
+        }
+      }
+
       return null;
     }
 
