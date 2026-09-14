@@ -782,6 +782,35 @@
               regions: regionLetter(unit) ? [regionLetter(unit)] : [],
             }, 1);
           }
+
+          // Rule 3c: this cluster is guaranteed to place exactly `target`
+          // stars somewhere inside itself — that's forced by the sumMax
+          // check above, no matter which of its cells end up being the
+          // actual stars. If every cell in the cluster also happens to
+          // share one other row, column or region, that guaranteed count
+          // lands in that other line/region too. Once the other unit's
+          // remaining need is fully covered by that guaranteed count, none
+          // of its other candidate cells can be a star — a region reduced
+          // to a two-cell domino that shares a row with an existing star
+          // is the simplest case: the domino is certain to add one star to
+          // that row, which is all the row still needs, so every other
+          // candidate in the row becomes a cross.
+          if (target > 0) {
+            const otherKinds = unit.kind === 'regio' ? ['rij', 'kolom'] : ['regio'];
+            for (const otherUnit of units) {
+              if (!otherKinds.includes(otherUnit.kind)) continue;
+              if (!cluster.every(c => otherUnit.cells.includes(c))) continue;
+              const { unknown: otherUnknown, remaining: otherRemaining } = unitState(otherUnit);
+              if (otherRemaining <= 0 || target < otherRemaining) continue;
+              const restCells = otherUnknown.filter(c => !cluster.includes(c));
+              if (!restCells.length) continue;
+              consider({
+                cause: cluster, target: restCells,
+                text: `${capitalize(unit.label)} heeft nog ${remaining} ster${remaining === 1 ? '' : 'ren'} nodig. ${clusterDesc} kan door onderlinge aanraking maar ${target} ster${target === 1 ? '' : 'ren'} bevatten, en dat aantal wordt sowieso gehaald — ongeacht welke cel${cluster.length === 1 ? '' : 'len'} het precies worden. ${cluster.length === 1 ? 'Die cel ligt' : 'Al die cellen liggen'} in ${otherUnit.label}, dat daarmee zijn resterende ${otherRemaining} ster${otherRemaining === 1 ? '' : 'ren'} al binnen heeft. De rest van ${otherUnit.label} wordt dus kruisje${restCells.length === 1 ? '' : 's'}.`,
+                regions: [regionLetter(unit), regionLetter(otherUnit)].filter(Boolean),
+              }, 2);
+            }
+          }
         }
       }
 
