@@ -874,8 +874,8 @@
               }
             }
             if (outside.length) {
-              const regionLabels = regionCombo.map(r => r.label).join(', ');
-              const lineLabels = lines.map(l => l.label).join(', ');
+              const regionLabels = joinLabels(regionCombo.map(r => r.label));
+              const lineLabels = joinLabels(lines.map(l => l.label));
               const dimWord = dim === 'rij' ? (k === 1 ? 'rij' : 'rijen') : (k === 1 ? 'kolom' : 'kolommen');
               consider({
                 cause: [...unionCells], target: outside,
@@ -925,8 +925,8 @@
               }
             }
             if (outside.length) {
-              const lineLabels = lineCombo.map(l => l.label).join(', ');
-              const regionLabels = regionsInvolved.map(r => r.label).join(', ');
+              const lineLabels = joinLabels(lineCombo.map(l => l.label));
+              const regionLabels = joinLabels(regionsInvolved.map(r => r.label));
               const dimWord = dim === 'rij' ? (k === 1 ? 'rij' : 'rijen') : (k === 1 ? 'kolom' : 'kolommen');
               consider({
                 cause: [...unionCells], target: outside,
@@ -1031,21 +1031,21 @@
             }
             if (guaranteedSum !== totalNeed) continue;
 
-            const lineLabels = lineCombo.map(l => l.label).join(', ');
+            const lineLabels = joinLabels(lineCombo.map(l => l.label));
             const ruleComplexity = k + regionInfo.length;
             for (const info of regionInfo) {
               const maxOutside = info.regRemaining - info.minInside;
               if (info.minInside === 0 && info.insideCells.length) {
                 consider({
                   cause: [...lineCellSet], target: info.insideCells,
-                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} kan al zijn sterren buiten ${lineLabels} kwijt, dus binnen ${lineLabels} zet die regio niks — dat wordt allemaal kruisjes.`,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig — dat is precies het totaal van wat elke regio daar minstens moet plaatsen. ${capitalize(info.regionUnit.label)} kan al zijn sterren buiten ${lineLabels} kwijt, dus binnen ${lineLabels} zet die regio niks — dat wordt allemaal kruisjes.`,
                   regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
               }
               if (info.minInside > 0 && info.minInside === info.insideCells.length) {
                 consider({
                   cause: [...lineCellSet], target: info.insideCells,
-                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} moet daarvoor ${info.minInside === 1 ? 'zijn laatste ster' : 'al zijn resterende sterren'} binnen ${lineLabels} plaatsen, en dat kan alleen als ${info.insideCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${info.insideCells.length === 1 ? 'is' : 'zijn'}.`,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig — dat is precies het totaal van wat elke regio daar minstens moet plaatsen. ${capitalize(info.regionUnit.label)} moet daarvoor ${info.minInside === 1 ? 'zijn laatste ster' : 'al zijn resterende sterren'} binnen ${lineLabels} plaatsen, en dat kan alleen als ${info.insideCells.length === 1 ? 'die ene cel' : 'al die cellen'} een ster ${info.insideCells.length === 1 ? 'is' : 'zijn'}.`,
                   place: true,
                   regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
@@ -1053,14 +1053,14 @@
               if (maxOutside === 0 && info.outsideCells.length) {
                 consider({
                   cause: [...lineCellSet], target: info.outsideCells,
-                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. ${capitalize(info.regionUnit.label)} moet daarvoor al zijn sterren binnen ${lineLabels} plaatsen, dus daarbuiten kan die regio niks meer — dat wordt allemaal kruisjes.`,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig — dat is precies het totaal van wat elke regio daar minstens moet plaatsen. ${capitalize(info.regionUnit.label)} moet daarvoor al zijn sterren binnen ${lineLabels} plaatsen, dus daarbuiten kan die regio niks meer — dat wordt allemaal kruisjes.`,
                   regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
               }
               if (maxOutside > 0 && maxOutside === info.outsideCells.length) {
                 consider({
                   cause: [...lineCellSet], target: info.outsideCells,
-                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig, en dat klopt precies op als elke regio daar zijn minimum haalt. Dat betekent dat ${info.regionUnit.label} buiten ${lineLabels} nog ${maxOutside === 1 ? '1 ster' : `${maxOutside} sterren`} moet plaatsen, en dat kan alleen als ${info.outsideCells.length === 1 ? 'die ene cel' : 'al die cellen'} daar een ster ${info.outsideCells.length === 1 ? 'is' : 'zijn'}.`,
+                  text: `${capitalize(lineLabels)} ${k === 1 ? 'heeft' : 'hebben'} samen nog ${totalNeed} ster${totalNeed === 1 ? '' : 'ren'} nodig — dat is precies het totaal van wat elke regio daar minstens moet plaatsen. Dat betekent dat ${info.regionUnit.label} buiten ${lineLabels} nog ${maxOutside === 1 ? '1 ster' : `${maxOutside} sterren`} moet plaatsen, en dat kan alleen als ${info.outsideCells.length === 1 ? 'die ene cel' : 'al die cellen'} daar een ster ${info.outsideCells.length === 1 ? 'is' : 'zijn'}.`,
                   place: true,
                   regions: [regionLetter(info.regionUnit)],
                 }, ruleComplexity);
@@ -1074,6 +1074,15 @@
     }
 
     function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+    // Joins a list of labels the Dutch way — "rij 10 en rij 11", or
+    // "rij 1, rij 2 en rij 3" for three or more — instead of a bare
+    // comma-separated list with no "en" before the last item.
+    function joinLabels(labels) {
+      if (labels.length <= 1) return labels.join('');
+      if (labels.length === 2) return `${labels[0]} en ${labels[1]}`;
+      return `${labels.slice(0, -1).join(', ')} en ${labels[labels.length - 1]}`;
+    }
 
     function applyHint() {
       const hint = computeHint();
