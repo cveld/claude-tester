@@ -260,7 +260,7 @@
       },
     };
 
-    let n, regionCells, cellRegion, solutionStars, stars, marks, userColors, cellEls;
+    let n, regionCells, cellRegion, regionTopLeft, solutionStars, stars, marks, userColors, cellEls;
     let hintNew = new Set(), hintCause = new Set(), hintRegions = new Set();
     let colorMode = false;
     let moveHistory = [];
@@ -320,6 +320,17 @@
       cellRegion = {};
       for (const [reg, cells] of Object.entries(regionCells)) {
         for (const [r, c] of cells) cellRegion[`${r},${c}`] = reg;
+      }
+      // Default cell to print each region's letter in (top row, then
+      // leftmost column) — used whenever a hint about that region has no
+      // bordered cells of its own to put the letter in instead.
+      regionTopLeft = {};
+      for (const [reg, cells] of Object.entries(regionCells)) {
+        let best = null;
+        for (const [r, c] of cells) {
+          if (!best || r < best[0] || (r === best[0] && c < best[1])) best = [r, c];
+        }
+        regionTopLeft[reg] = key(best[0], best[1]);
       }
 
       titleEl.textContent = `Sterrenslag ${p.label}`;
@@ -436,6 +447,21 @@
         }
       }
 
+      // Each hinted region gets its letter printed in exactly one cell:
+      // preferably a bordered (hint-cause/hint-new) cell of that region —
+      // the top-left-most one, if it has several — otherwise the region's
+      // own default top-left cell.
+      const letterCell = {};
+      for (const reg of hintRegions) {
+        let best = null;
+        for (const k of [...hintCause, ...hintNew]) {
+          if (cellRegion[k] !== reg) continue;
+          const [r, c] = k.split(',').map(Number);
+          if (!best || r < best.r || (r === best.r && c < best.c)) best = { k, r, c };
+        }
+        letterCell[reg] = best ? best.k : regionTopLeft[reg];
+      }
+
       for (const [k, div] of Object.entries(cellEls)) {
         div.classList.toggle('star', stars.has(k));
         div.classList.toggle('marked', marks.has(k));
@@ -443,7 +469,7 @@
         div.classList.toggle('conflict', conflicted.has(k));
         div.classList.toggle('hint-new', hintNew.has(k));
         div.classList.toggle('hint-cause', hintCause.has(k));
-        div.classList.toggle('hint-region', hintRegions.has(cellRegion[k]));
+        div.classList.toggle('hint-region', letterCell[cellRegion[k]] === k);
       }
       for (let r = 1; r <= n; r++) {
         const el = document.getElementById(`row-${r}`);
