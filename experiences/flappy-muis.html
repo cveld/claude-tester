@@ -66,6 +66,7 @@
 <script>
 (() => {
   const W = 400, H = 600, GROUND = 540;
+  const SPACING = 260, MAX_SHIFT = 110; // px tussen palen / max. hoogteverschil tussen gaten
   const cv = document.getElementById('c'), ctx = cv.getContext('2d');
   const $ = id => document.getElementById(id);
   const cheat = {
@@ -122,9 +123,14 @@
     if (cheat.float.checked) mouse.vy *= 0.9;
     mouse.y += mouse.vy * speed;
 
-    if (frame % Math.round(95 / speed) === 0 || pipes.length === 0) {
+    const last = pipes[pipes.length - 1];
+    if (!last || last.x <= W - SPACING) {
       const g = GAP();
-      pipes.push({ x: W, gapY: 60 + Math.random() * (GROUND - g - 120), passed: false });
+      const lo = 60, hi = GROUND - g - 60;
+      // Houd het gat haalbaar t.o.v. het vorige gat (max. hoogteverschil).
+      const from = last ? Math.max(lo, last.gapY - MAX_SHIFT) : lo;
+      const to = last ? Math.min(hi, last.gapY + MAX_SHIFT) : hi;
+      pipes.push({ x: W, gapY: from + Math.random() * (to - from), passed: false });
     }
     for (const p of pipes) {
       p.x -= 2.6 * speed;
